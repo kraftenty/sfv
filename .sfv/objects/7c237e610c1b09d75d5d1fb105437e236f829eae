@@ -18,7 +18,7 @@ public class FileUtil {
 
     public void initializeDotSfvDirectory() throws FileSystemException, IOException {
         if (Files.exists(dotSfvPath)) {
-            throw new FileSystemException("sfv repository already exists: " + dotSfvPath);
+            throw new FileSystemException("sfv core already exists: " + dotSfvPath);
         }
         // .sfv 디렉토리 생성
         Files.createDirectory(dotSfvPath);
@@ -33,7 +33,7 @@ public class FileUtil {
     public void validateSfvRepository() throws FileSystemException {
         if (!Files.exists(dotSfvPath) || !Files.exists(dotSfvPath.resolve("objects"))
                 || !Files.exists(dotSfvPath.resolve("commits")) || !Files.exists(dotSfvPath.resolve("HEAD"))) {
-            throw new FileSystemException("sfv repository is not initialized");
+            throw new FileSystemException("sfv core is not initialized");
         }
     }
 

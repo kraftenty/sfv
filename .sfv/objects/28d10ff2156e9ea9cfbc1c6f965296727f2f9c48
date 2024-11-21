@@ -10,9 +10,9 @@ public class Main {
 //        commands.add(new String[]{"commit", "-m", "first commit"});
 //        commands.add(new String[]{"status"});
 //        //
-//        commands.add(new String[]{"status"});
-//        commands.add(new String[]{"commit", "-m", "second commit"});
-//        commands.add(new String[]{"status"});
+        commands.add(new String[]{"status"});
+        commands.add(new String[]{"commit", "-m", "second commit"});
+        commands.add(new String[]{"status"});
 
 
         commands.add(new String[]{"log"});
