@@ -18,14 +18,12 @@ public class CommitUtil {
     }
 
     public Commit createCommit(String message, String HEAD, Map<Path, String> fileHashes) throws NoSuchAlgorithmException, IOException {
-        String commitId = generateCommitId(message);
-
         // 이전 커밋의 파일 해시 정보를 가져옴
-        Map<String, String> relativeFileHashes = new HashMap<>();
+        Map<String, String> fileHashMap = new HashMap<>(); // key : 파일 상대경로, value : 해시값
         if (!HEAD.isEmpty()) {
             Commit previousCommit = loadCommit(HEAD);
             if (previousCommit != null) {
-                relativeFileHashes.putAll(previousCommit.getFileHashes());
+                fileHashMap.putAll(previousCommit.getFileHashes());
             }
         }
 
@@ -33,10 +31,10 @@ public class CommitUtil {
         for (Map.Entry<Path, String> entry : fileHashes.entrySet()) {
             Path relativePath = fileUtil.getRootPath().relativize(entry.getKey());
             String normalizedPath = relativePath.normalize().toString();
-            relativeFileHashes.put(normalizedPath, entry.getValue());
+            fileHashMap.put(normalizedPath, entry.getValue());
         }
 
-        Commit commit = new Commit(commitId, message, HEAD, relativeFileHashes);
+        Commit commit = new Commit(generateCommitId(message), message, HEAD, fileHashMap);
         saveCommit(commit);
         return commit;
     }

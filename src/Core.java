@@ -38,7 +38,7 @@ public class Core {
             throw new FileSystemException("Nothing to commit.");
         }
         
-        // 2. 변경된 파일들의 해시 계산 (병렬 처리)
+        // 2. 변경된 파일들의 해시 계산 (병렬 처리) - ParallelStream : 자동 병렬처리. 수동 병렬처리 연구 해보셈 TODO
         Map<Path, String> fileHashes = new ConcurrentHashMap<>();
         modifiedFiles.parallelStream().forEach(file -> {
             try {
