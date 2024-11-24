@@ -1,3 +1,5 @@
+import timer.PerformanceTimer;
+
 import java.io.IOException;
 import java.nio.file.FileSystemException;
 import java.nio.file.Files;
@@ -28,36 +30,69 @@ public class Core {
         fileUtil.initializeDotSfvDirectory();
     }
 
+     // Commit
+     public String commit(String message) throws IOException, NoSuchAlgorithmException {
+         fileUtil.validateSfvRepository();
+        
+         // 1. 변경된 파일 찾기
+         List<Path> modifiedFiles = findModifiedFiles();
+         if (modifiedFiles.isEmpty()) {
+             throw new FileSystemException("Nothing to commit.");
+         }
+
+         PerformanceTimer.start("hash-calculation");
+         // 2. 변경된 파일들의 해시 계산 (병렬 처리) - ParallelStream : 자동 병렬처리. 수동 병렬처리 연구 해보셈 TODO
+         Map<Path, String> fileHashes = new ConcurrentHashMap<>();
+         modifiedFiles.parallelStream().forEach(file -> {
+             try {
+                 String hash = fileUtil.calculateFileHash(file);
+                 fileHashes.put(file, hash);
+                 fileUtil.saveObject(hash, Files.readAllBytes(file));
+             } catch (IOException | NoSuchAlgorithmException e) {
+                 throw new RuntimeException(e);
+             }
+         });
+         PerformanceTimer.stop("hash-calculation");
+         System.out.println("\nHash Calculation Performance:");
+         PerformanceTimer.printStats("hash-calculation");
+         // 3. 커밋 객체 생성 및 저장
+         Commit commit = commitUtil.createCommit(message, fileUtil.getHEADValue(), fileHashes);
+
+         // 4. HEAD 업데이트
+         fileUtil.updateHEADValue(commit.getId());
+
+         return commit.getId();
+     }
+    
     // Commit
-    public String commit(String message) throws IOException, NoSuchAlgorithmException {
-        fileUtil.validateSfvRepository();
-        
-        // 1. 변경된 파일 찾기
-        List<Path> modifiedFiles = findModifiedFiles();
-        if (modifiedFiles.isEmpty()) {
-            throw new FileSystemException("Nothing to commit.");
-        }
-        
-        // 2. 변경된 파일들의 해시 계산 (병렬 처리) - ParallelStream : 자동 병렬처리. 수동 병렬처리 연구 해보셈 TODO
-        Map<Path, String> fileHashes = new ConcurrentHashMap<>();
-        modifiedFiles.parallelStream().forEach(file -> {
-            try {
-                String hash = fileUtil.calculateFileHash(file);
-                fileHashes.put(file, hash);
-                fileUtil.saveObject(hash, Files.readAllBytes(file));
-            } catch (IOException | NoSuchAlgorithmException e) {
-                throw new RuntimeException(e);
-            }
-        });
-
-        // 3. 커밋 객체 생성 및 저장
-        Commit commit = commitUtil.createCommit(message, fileUtil.getHEADValue(), fileHashes);
-
-        // 4. HEAD 업데이트
-        fileUtil.updateHEADValue(commit.getId());
-
-        return commit.getId();
-    }
+//    public String commit(String message) throws IOException, NoSuchAlgorithmException {
+//        fileUtil.validateSfvRepository();
+//
+//        // 1. 변경된 파일 찾기
+//        List<Path> modifiedFiles = findModifiedFiles();
+//        if (modifiedFiles.isEmpty()) {
+//            throw new FileSystemException("Nothing to commit.");
+//        }
+//
+//        // 2. 병렬 처리를 위한 executor 생성 및 해시 계산
+//        PerformanceTimer.start("hash-calculation");
+//        FileHashExecutor executor = new FileHashExecutor(Runtime.getRuntime().availableProcessors());
+//        Map<Path, String> fileHashes = executor.calculateHashes(modifiedFiles);
+//        executor.shutdown();
+//        PerformanceTimer.stop("hash-calculation");
+//
+//        // 성능 통계 출력
+//        System.out.println("\nHash Calculation Performance:");
+//        PerformanceTimer.printStats("hash-calculation");
+//
+//        // 3. 커밋 객체 생성 및 저장
+//        Commit commit = commitUtil.createCommit(message, fileUtil.getHEADValue(), fileHashes);
+//
+//        // 4. HEAD 업데이트
+//        fileUtil.updateHEADValue(commit.getId());
+//
+//        return commit.getId();
+//    }
 
     // TODO : 병렬 처리 적용 가능
     // Checkout
@@ -109,7 +144,7 @@ public class Core {
         System.out.println("status for commit: " + (currentCommit == null ? "none" :
                 currentCommit.getId().substring(0, 7) + " " + currentCommit.getMessage()));
 
-        if (modifiedFiles.isEmpty()) {
+                if (modifiedFiles.isEmpty()) {
             System.out.println("No changes detected");
         } else {
             System.out.println("new changes:");
