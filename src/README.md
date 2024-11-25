@@ -1,2 +1,2 @@
 # Super Fast Version-Control-System
-첫번쨰야
+
