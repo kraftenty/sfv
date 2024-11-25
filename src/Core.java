@@ -44,27 +44,27 @@ public class Core {
              throw new FileSystemException("Nothing to commit.");
          }
 
-//         PerformanceTimer.start("hash-calculation");
-//         // 2. 변경된 파일들의 해시 계산 (병렬 처리) - ParallelStream : 자동 병렬처리. 수동 병렬처리 연구 해보셈 TODO
-//         Map<Path, String> fileHashes = new ConcurrentHashMap<>();
-//         modifiedFiles.parallelStream().forEach(file -> {
-//             try {
-//                 String hash = fileUtil.calculateFileHash(file);
-//                 fileHashes.put(file, hash);
-//                 fileUtil.saveObject(hash, Files.readAllBytes(file));
-//             } catch (IOException | NoSuchAlgorithmException e) {
-//                 throw new RuntimeException(e);
-//             }
-//         });
-//         PerformanceTimer.stop("hash-calculation");
-//         System.out.println("\nHash Calculation Performance:");
-//         PerformanceTimer.printStats("hash-calculation");
-        //2. 병렬 처리를 위한 executor 생성 및 해시 계산 , 현재 노트북기준 6000ms빠름 (더미파일 50개 기준)
-        PerformanceTimer.start("hash-calculation");
-        FileHashExecutor executor = new FileHashExecutor(Runtime.getRuntime().availableProcessors());
-        Map<Path, String> fileHashes = executor.calculateHashes(modifiedFiles);
-        executor.shutdown();
-        PerformanceTimer.stop("hash-calculation");
+         PerformanceTimer.start("hash-calculation");
+         // 2. 변경된 파일들의 해시 계산 (병렬 처리) - ParallelStream : 자동 병렬처리. 수동 병렬처리 연구 해보셈 TODO
+         Map<Path, String> fileHashes = new ConcurrentHashMap<>();
+         modifiedFiles.parallelStream().forEach(file -> {
+             try {
+                 String hash = fileUtil.calculateFileHash(file);
+                 fileHashes.put(file, hash);
+                 fileUtil.saveObject(hash, Files.readAllBytes(file));
+             } catch (IOException | NoSuchAlgorithmException e) {
+                 throw new RuntimeException(e);
+             }
+         });
+         PerformanceTimer.stop("hash-calculation");
+         System.out.println("\nHash Calculation Performance:");
+         PerformanceTimer.printStats("hash-calculation");
+//        //2. 병렬 처리를 위한 executor 생성 및 해시 계산  //
+//        PerformanceTimer.start("hash-calculation");
+//        FileHashExecutor executor = new FileHashExecutor(Runtime.getRuntime().availableProcessors());
+//        Map<Path, String> fileHashes = executor.calculateHashes(modifiedFiles);
+//        executor.shutdown();
+//        PerformanceTimer.stop("hash-calculation");
 
         // 성능 통계 출력
         System.out.println("\nHash Calculation Performance:");
