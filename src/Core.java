@@ -36,7 +36,7 @@ public class Core {
         
          // 1. 변경된 파일 찾기
          PerformanceTimer.start("find-modified-files");
-         List<Path> modifiedFiles = findModifiedFiles2();
+         List<Path> modifiedFiles = findModifiedFiles3();
          PerformanceTimer.stop("find-modified-files");
          System.out.println("\nfind-modified-files Performance:");
          PerformanceTimer.printStats("find-modified-files");
@@ -44,27 +44,27 @@ public class Core {
              throw new FileSystemException("Nothing to commit.");
          }
 
-         PerformanceTimer.start("hash-calculation");
-         // 2. 변경된 파일들의 해시 계산 (병렬 처리) - ParallelStream : 자동 병렬처리. 수동 병렬처리 연구 해보셈 TODO
-         Map<Path, String> fileHashes = new ConcurrentHashMap<>();
-         modifiedFiles.parallelStream().forEach(file -> {
-             try {
-                 String hash = fileUtil.calculateFileHash(file);
-                 fileHashes.put(file, hash);
-                 fileUtil.saveObject(hash, Files.readAllBytes(file));
-             } catch (IOException | NoSuchAlgorithmException e) {
-                 throw new RuntimeException(e);
-             }
-         });
-         PerformanceTimer.stop("hash-calculation");
-         System.out.println("\nHash Calculation Performance:");
-         PerformanceTimer.printStats("hash-calculation");
-//        //2. 병렬 처리를 위한 executor 생성 및 해시 계산  //
-//        PerformanceTimer.start("hash-calculation");
-//        FileHashExecutor executor = new FileHashExecutor(Runtime.getRuntime().availableProcessors());
-//        Map<Path, String> fileHashes = executor.calculateHashes(modifiedFiles);
-//        executor.shutdown();
-//        PerformanceTimer.stop("hash-calculation");
+//         PerformanceTimer.start("hash-calculation");
+//         // 2. 변경된 파일들의 해시 계산 (병렬 처리) - ParallelStream : 자동 병렬처리. 수동 병렬처리 연구 해보셈 TODO
+//         Map<Path, String> fileHashes = new ConcurrentHashMap<>();
+//         modifiedFiles.parallelStream().forEach(file -> {
+//             try {
+//                 String hash = fileUtil.calculateFileHash(file);
+//                 fileHashes.put(file, hash);
+//                 fileUtil.saveObject(hash, Files.readAllBytes(file));
+//             } catch (IOException | NoSuchAlgorithmException e) {
+//                 throw new RuntimeException(e);
+//             }
+//         });
+//         PerformanceTimer.stop("hash-calculation");
+//         System.out.println("\nHash Calculation Performance:");
+//         PerformanceTimer.printStats("hash-calculation");
+        //2. 병렬 처리를 위한 executor 생성 및 해시 계산  //
+        PerformanceTimer.start("hash-calculation");
+        FileHashExecutor executor = new FileHashExecutor(Runtime.getRuntime().availableProcessors());
+        Map<Path, String> fileHashes = executor.calculateHashes(modifiedFiles);
+        executor.shutdown();
+        PerformanceTimer.stop("hash-calculation");
 
         // 성능 통계 출력
         System.out.println("\nHash Calculation Performance:");
@@ -256,5 +256,48 @@ public class Core {
              });
          return modifiedFiles;
      }
+
+    private List<Path> findModifiedFiles3() throws IOException {
+        List<Path> modifiedFiles = new ArrayList<>();
+        List<Path> allFiles = new ArrayList<>();
+        
+        // 1. 모든 대상 파일 수집
+        Files.walk(fileUtil.getRootPath())
+            .filter(path -> !path.startsWith(fileUtil.getDotSfvPath()))
+            .filter(path -> !path.toString().contains("/."))
+            .filter(path -> !path.startsWith(fileUtil.getRootPath().resolve("out")))
+            .filter(Files::isRegularFile)
+            .filter(Files::exists)
+            .forEach(allFiles::add);
+
+        // 2. ChunkedHashCalculator2 초기화 (싱글스레드)
+        ChunkedHashCalculator2 hashCalculator = new ChunkedHashCalculator2();
+
+        // 3. HEAD 값과 마지막 커밋 가져오기
+        String head = fileUtil.getHEADValue();
+        Commit lastCommit = head.isEmpty() ? null : commitUtil.loadCommit(head);
+
+        // 4. 각 파일에 대해 청크 기반 해시 계산 및 비교
+        for (Path path : allFiles) {
+            try {
+                String currentHash = hashCalculator.calculateFileHash(path);
+                String storedHash = "__firsthash__";
+
+                if (lastCommit != null) {
+                    Path relativePath = fileUtil.getRootPath().relativize(path);
+                    String normalizedPath = relativePath.normalize().toString();
+                    storedHash = lastCommit.getFileHashes().getOrDefault(normalizedPath, "");
+                }
+
+                if (!currentHash.equals(storedHash)) {
+                    modifiedFiles.add(path);
+                }
+            } catch (NoSuchAlgorithmException e) {
+                System.err.println("Warning: Hash calculation failed for file: " + path);
+            }
+        }
+
+        return modifiedFiles;
+    }
 
 }

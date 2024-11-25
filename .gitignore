@@ -5,6 +5,7 @@ out/
 dummy/
 .sfv/
 test_repo/
+
 ### Eclipse ###
 .apt_generated
 .classpath

@@ -15,6 +15,10 @@ public class Main {
 //        commands.add(new String[]{"commit", "-m", "second commit"});
 //        commands.add(new String[]{"status"});
 
+        DummyFileGenerator generator = new DummyFileGenerator();
+        generator.generateFiles(50,50); 
+
+
         commands.add(new String[]{"log"});
 
         // 각 명령어 실행
