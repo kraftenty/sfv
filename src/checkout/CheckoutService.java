@@ -1,7 +1,8 @@
 package checkout;
 
 import commit.Commit;
-import commit.CommitUtil;
+import commit.CommitService;
+import common.FileChangeDetector;
 import common.FileUtil;
 
 import java.io.IOException;
@@ -14,24 +15,22 @@ import java.util.stream.Collectors;
 
 public class CheckoutService {
 
-    private final FileUtil fileUtil;
-    private final CommitUtil commitUtil;
+    private final CommitService commitService;
 
     public CheckoutService() {
-        fileUtil = new FileUtil();
-        commitUtil = new CommitUtil();
+        commitService = new CommitService();
     }
 
     public void checkout(String commitId, boolean force) throws IOException {
-        fileUtil.validateSfvRepository();
+        FileUtil.validateSfvRepository();
 
-        String headValue = fileUtil.getHEADValue();
+        String headValue = FileUtil.getHEADValue();
         System.out.println("Current HEAD value: " + headValue);
 
-        String fullCommitId = fileUtil.findFullCommitId(commitId);
+        String fullCommitId = FileUtil.findFullCommitId(commitId);
         System.out.println("Target commit.Commit ID: " + fullCommitId);
 
-        Commit targetCommit = commitUtil.loadCommit(fullCommitId);
+        Commit targetCommit = commitService.loadCommit(fullCommitId);
         if (targetCommit == null) {
             throw new IOException("Target commit not found: " + commitId);
         }
@@ -39,8 +38,8 @@ public class CheckoutService {
 
         // Step 3: 변경된 파일 확인
         if (!force) {
-            Commit currentCommit = headValue.isEmpty() ? null : commitUtil.loadCommit(headValue);
-            List<Path> modifiedFiles = findModifiedFiles();
+            Commit currentCommit = headValue.isEmpty() ? null : commitService.loadCommit(headValue); // TODO : 안쓰이는데?
+            List<Path> modifiedFiles = FileChangeDetector.findChangedFiles(FileChangeDetector.Strategy.PARALLEL_CHUNKED);
             System.out.println("Modified files: " + modifiedFiles);
 
             if (!modifiedFiles.isEmpty()) {
@@ -53,7 +52,7 @@ public class CheckoutService {
         restoreWorkingDirectory(targetCommit);
 
         // Step 5: HEAD 업데이트
-        fileUtil.updateHEADValue(fullCommitId);
+        FileUtil.updateHEADValue(fullCommitId);
         System.out.println("HEAD updated to commit: " + fullCommitId.substring(0, 7));
     }
 
@@ -62,7 +61,7 @@ public class CheckoutService {
         Map<String, String> targetFileHashes = targetCommit.getFileHashes();
 
         // Step 1: 모든 현재 파일 찾기
-        List<Path> allFiles = Files.walk(fileUtil.getRootPath())
+        List<Path> allFiles = Files.walk(FileUtil.getRootPath())
                 .filter(Files::isRegularFile)
                 .filter(path -> !path.toString().contains(".sfv")) // .sfv 디렉토리 제외
                 .filter(path -> !path.toString().contains(".git")) // .git 디렉토리 제외
@@ -71,7 +70,7 @@ public class CheckoutService {
         // Step 2: 커밋에 포함되지 않은 파일 삭제 (병렬 처리)
         List<Path> filesToDelete = allFiles.stream()
                 .filter(file -> {
-                    String relativePath = fileUtil.getRootPath().relativize(file).toString();
+                    String relativePath = FileUtil.getRootPath().relativize(file).toString();
                     return !targetFileHashes.containsKey(relativePath);
                 })
                 .collect(Collectors.toList());
@@ -90,14 +89,14 @@ public class CheckoutService {
         targetFileHashes.entrySet().parallelStream().forEach(entry -> {
             String relativePath = entry.getKey();
             String hash = entry.getValue();
-            String rootPathStr = fileUtil.getRootPath().toString();
+            String rootPathStr = FileUtil.getRootPath().toString();
             Path fullPath = Paths.get(rootPathStr, relativePath);
 
             try {
                 System.out.println("Restoring file: " + relativePath);
                 System.out.println("Target absolute path: " + fullPath);
 
-                Path objectPath = fileUtil.getObjectPath(hash);
+                Path objectPath = FileUtil.getObjectPath(hash);
                 if (Files.exists(objectPath)) {
                     Files.createDirectories(fullPath.getParent()); // 상위 디렉토리 생성
                     Files.write(fullPath, Files.readAllBytes(objectPath)); // 파일 복원

@@ -1,4 +1,5 @@
-package timer;
+package common;
+
 import java.util.HashMap;
 import java.util.Map;
 import java.util.ArrayList;
@@ -20,7 +21,7 @@ public class PerformanceTimer {
 
         long duration = System.nanoTime() - startTime;
         timerRecords.computeIfAbsent(operationName, k -> new ArrayList<>())
-                   .add(new TimerRecord(duration, System.currentTimeMillis()));
+                .add(new TimerRecord(duration, System.currentTimeMillis()));
     }
 
     public static void printStats(String operationName) {
@@ -31,25 +32,26 @@ public class PerformanceTimer {
         }
 
         double totalMs = records.stream()
-                              .mapToLong(TimerRecord::getDuration)
-                              .sum() / 1_000_000.0;
-        
+                .mapToLong(TimerRecord::duration)
+                .sum() / 1_000_000.0;
+
         double avgMs = totalMs / records.size();
         double minMs = records.stream()
-                            .mapToLong(TimerRecord::getDuration)
-                            .min()
-                            .orElse(0) / 1_000_000.0;
+                .mapToLong(TimerRecord::duration)
+                .min()
+                .orElse(0) / 1_000_000.0;
         double maxMs = records.stream()
-                            .mapToLong(TimerRecord::getDuration)
-                            .max()
-                            .orElse(0) / 1_000_000.0;
+                .mapToLong(TimerRecord::duration)
+                .max()
+                .orElse(0) / 1_000_000.0;
 
-        System.out.println("\nPerformance Statistics for: " + operationName);
+        System.out.println("Performance Statistics for: " + operationName);
         System.out.println("Total executions: " + records.size());
         System.out.println(String.format("Average time: %.2f ms", avgMs));
         System.out.println(String.format("Min time: %.2f ms", minMs));
         System.out.println(String.format("Max time: %.2f ms", maxMs));
         System.out.println(String.format("Total time: %.2f ms", totalMs));
+        System.out.println();
     }
 
     public static void reset(String operationName) {
@@ -62,21 +64,6 @@ public class PerformanceTimer {
         startTimes.clear();
     }
 
-    private static class TimerRecord {
-        private final long duration;
-        private final long timestamp;
-
-        TimerRecord(long duration, long timestamp) {
-            this.duration = duration;
-            this.timestamp = timestamp;
-        }
-
-        public long getDuration() {
-            return duration;
-        }
-
-        public long getTimestamp() {
-            return timestamp;
-        }
+    private record TimerRecord(long duration, long timestamp) {
     }
 } 

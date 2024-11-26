@@ -9,29 +9,21 @@ public class Main {
 
 
         commands.add(new String[]{"init"});
-        commands.add(new String[]{"status"});
-        commands.add(new String[]{"commit", "-m", "first commit"});
+//        commands.add(new String[]{"status"});
+//        commands.add(new String[]{"commit", "-m", "first commit"});
+//        commands.add(new String[]{"status"});
+//        commands.add(new String[]{"commit", "-m", "second commit"});
+//        commands.add(new String[]{"status"});
+//        commands.add(new String[]{"log"});
 
 
-/*
-        commands.add(new String[]{"status"});
-        commands.add(new String[]{"commit", "-m", "second commit"});
-        commands.add(new String[]{"status"});*/
-
-       // commands.add(new String[]{"commit", "-m", "second commit"});
-
-      // TODO: bogil
-//        DummyFileGenerator generator = new DummyFileGenerator();
+//        common.DummyFileGenerator generator = new common.DummyFileGenerator();
 //        generator.generateFiles(50,50);
-//
-//      commands.add(new String[]{"log"});
 
         // 각 명령어 실행
         CommandParser commandParser = new CommandParser();
-
         for (String[] command : commands) {
             commandParser.parseCommand(command);
-            System.out.println("---------------------------------------------------");
         }
     }
 }

@@ -10,11 +10,9 @@ import java.util.concurrent.*;
 
 public class FileHashExecutor {
     private final ExecutorService executor;
-    private final FileUtil fileUtil;
-    
+
     public FileHashExecutor(int nThreads) {
         this.executor = Executors.newFixedThreadPool(nThreads);
-        this.fileUtil = new FileUtil();
     }
     
     public Map<Path, String> calculateHashes(List<Path> files) {
@@ -24,9 +22,11 @@ public class FileHashExecutor {
         for (Path file : files) {
             executor.submit(() -> {
                 try {
-                    String hash = fileUtil.calculateFileHash(file);
-                    results.put(file, hash);
-                    fileUtil.saveObject(hash, Files.readAllBytes(file));
+                    String hash = FileUtil.calculateFileHash(file);
+                    Path relativePath = FileUtil.getRootPath().relativize(file);
+                    String normalizedPath = relativePath.normalize().toString();
+                    results.put(relativePath, hash);
+                    FileUtil.saveObject(hash, Files.readAllBytes(file));
                 } catch (Exception e) {
                     e.printStackTrace();
                 } finally {
@@ -36,7 +36,7 @@ public class FileHashExecutor {
         }
         
         try {
-            latch.await(); // 모든 작업이 완료될 때까지 대기
+            latch.await();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }

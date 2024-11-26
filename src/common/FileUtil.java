@@ -5,123 +5,98 @@ import java.io.IOException;
 import java.security.NoSuchAlgorithmException;
 
 public class FileUtil {
-
     private static final String DOT_SFV = ".sfv";
     private static final String COMMIT = "commit";
     private static final String OBJECT = "object";
     private static final String HEAD = "HEAD";
 
-    private final Path rootPath;
-    private final Path dotSfvPath;
-    private final Path commitsPath;
-    private final Path objectsPath;
-    private final Path headPath;
+    private static final Path ROOT_PATH = Paths.get(".");
+    private static final Path DOT_SFV_PATH = ROOT_PATH.resolve(DOT_SFV);
+    private static final Path COMMITS_PATH = Paths.get(DOT_SFV_PATH.toString(), COMMIT);
+    private static final Path OBJECTS_PATH = Paths.get(DOT_SFV_PATH.toString(), OBJECT);
+    private static final Path HEAD_PATH = Paths.get(DOT_SFV_PATH.toString(), HEAD);
 
-    public FileUtil() {
-        this.rootPath = Paths.get(".");
-        this.dotSfvPath = rootPath.resolve(DOT_SFV);
-        this.commitsPath = Paths.get(dotSfvPath.toString(), COMMIT);
-        this.objectsPath = Paths.get(dotSfvPath.toString(), OBJECT);
-        this.headPath = Paths.get(dotSfvPath.toString(), HEAD);
-    }
-
-    public void initializeDotSfv() throws FileSystemException, IOException {
-        if (Files.exists(dotSfvPath)) {
-            throw new FileSystemException("sfv repository already exists: " + dotSfvPath);
+    public static void initializeDotSfv() throws IOException {
+        // .sfv 디렉토리가 이미 존재하는지 확인
+        if (Files.exists(DOT_SFV_PATH)) {
+            throw new IOException("sfv repository already exists at: " + DOT_SFV_PATH);
         }
 
         // .sfv 디렉토리와 하위 디렉토리 생성
-        Files.createDirectory(dotSfvPath);
-        Files.createDirectory(objectsPath);
-        Files.createDirectory(commitsPath);
+        Files.createDirectory(DOT_SFV_PATH);
+        Files.createDirectory(OBJECTS_PATH);
+        Files.createDirectory(COMMITS_PATH);
     }
 
-    public void validateSfvRepository() throws FileSystemException {
-        if (!Files.exists(dotSfvPath) || !Files.exists(objectsPath)
-                || !Files.exists(commitsPath)) {
+    public static void validateSfvRepository() throws FileSystemException {
+        if (!Files.exists(DOT_SFV_PATH) || !Files.exists(OBJECTS_PATH)
+                || !Files.exists(COMMITS_PATH)) {
             throw new FileSystemException("sfv repository is not initialized");
         }
     }
 
-    public String calculateFileHash(Path file) throws IOException, NoSuchAlgorithmException {
+    public static String calculateFileHash(Path file) throws IOException, NoSuchAlgorithmException {
         byte[] content = Files.readAllBytes(file);
         return HashUtil.sha1(content);
     }
 
-    public Path getRootPath() {
-        return rootPath;
+    public static Path getRootPath() {
+        return ROOT_PATH;
     }
 
-    public Path getDotSfvPath() {
-        return dotSfvPath;
+    public static Path getDotSfvPath() {
+        return DOT_SFV_PATH;
     }
 
-    public Path getCommitPath(String commitId) {
+    public static Path getCommitPath(String commitId) {
         if (commitId == null || commitId.isEmpty()) {
             throw new IllegalArgumentException("Invalid commit ID: " + commitId);
         }
-        return commitsPath.resolve(commitId); // .sfv/commit/ 경로 반환
+        return COMMITS_PATH.resolve(commitId);
     }
 
-    public Path getObjectPath(String hash) {
+    public static Path getObjectPath(String hash) {
         if (hash == null || hash.isEmpty()) {
             throw new IllegalArgumentException("Invalid hash: " + hash);
         }
-        // 전체 해시를 파일 이름으로 사용
-        return objectsPath.resolve(hash);
+        return OBJECTS_PATH.resolve(hash);
     }
 
-    public void saveObject(String hash, byte[] content) throws IOException {
+    public static void saveObject(String hash, byte[] content) throws IOException {
         Path objectPath = getObjectPath(hash);
-        Files.createDirectories(objectPath.getParent()); // 객체 파일 경로의 부모 디렉토리 생성
-        Files.write(objectPath, content); // 객체 파일 내용 저장
+        Files.createDirectories(objectPath.getParent());
+        Files.write(objectPath, content);
     }
 
-    public String findFullCommitId(String partialCommitId) throws IOException {
-        if (partialCommitId == null || partialCommitId.isEmpty()) {
-            throw new IllegalArgumentException("Partial commit ID cannot be null or empty");
+    public static String getHEADValue() throws IOException {
+        if (!Files.exists(HEAD_PATH)) {
+            throw new IOException("HEAD file does not exist");
         }
+        return Files.readString(HEAD_PATH).trim();
+    }
 
-        try (DirectoryStream<Path> stream = Files.newDirectoryStream(commitsPath)) {
+    public static void updateHEADValue(String value) throws IOException {
+        Files.writeString(HEAD_PATH, value + System.lineSeparator());
+    }
+
+    public static void initializeHEAD() throws IOException {
+        updateHEADValue("");
+    }
+
+    public static String findFullCommitId(String partialCommitId) throws IOException {
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(COMMITS_PATH)) {
             for (Path commitFile : stream) {
                 String fileName = commitFile.getFileName().toString();
-
                 if (fileName.startsWith(partialCommitId)) {
                     return fileName;
                 }
             }
         }
-
-        throw new FileSystemException("commit.Commit not found for partial ID: " + partialCommitId);
+        throw new FileSystemException("Commit not found for partial ID: " + partialCommitId);
     }
 
-    public String getHEADValue() throws IOException {
-        if (!Files.exists(headPath)) {
-            throw new IOException("HEAD file does not exist: " + headPath);
-        }
-
-        String headContent = Files.readString(headPath).trim();
-        if (headContent.contains("\n") || headContent.contains("\r")) {
-            headContent = headContent.split("\\r?\\n")[0].trim();
-        }
-        return headContent;
-    }
-
-    public void updateHEADValue(String value) throws IOException {
-        try {
-            Files.writeString(headPath, value.trim() + System.lineSeparator());
-        } catch (IOException e) {
-            System.err.println("Failed to update HEAD: " + e.getMessage());
-            throw e;
-        }
-    }
-
-    public void initializeHEAD() throws IOException {
-        if (Files.exists(headPath)) {
-            System.out.println("HEAD file already exists.");
-        } else {
-            updateHEADValue("");
-            System.out.println("HEAD file initialized.");
-        }
+    // 윈도우에서도 경로구분자 통일. 이거갖다쓰셈
+    public static String normalizePath(Path path) {
+        return path.toString().replace('\\', '/');
     }
 }

@@ -1,33 +1,30 @@
 package log;
 
 import commit.Commit;
-import commit.CommitUtil;
+import commit.CommitService;
 import common.FileUtil;
 
 import java.io.IOException;
 
 public class LogService {
 
-    private final FileUtil fileUtil;
-    private final CommitUtil commitUtil;
+    private final CommitService commitService;
 
     public LogService() {
-        fileUtil = new FileUtil();
-        commitUtil = new CommitUtil();
+        this.commitService = new CommitService();
     }
 
-    // Log
     public void getLog() throws IOException {
-        fileUtil.validateSfvRepository();
+        FileUtil.validateSfvRepository();
 
-        String currentCommitId = fileUtil.getHEADValue();
+        String currentCommitId = FileUtil.getHEADValue();
         if (currentCommitId.isEmpty()) {
             System.out.println("No commits yet");
             return;
         }
 
         // 커밋 히스토리 순회하며 출력
-        Commit currentCommit = commitUtil.loadCommit(currentCommitId);
+        Commit currentCommit = commitService.loadCommit(currentCommitId);
         while (currentCommit != null) {
             System.out.println("commit " + currentCommit.getId());
             System.out.println("Date: " + currentCommit.getTimestamp());
@@ -39,7 +36,7 @@ public class LogService {
             if (previousCommitId.isEmpty()) {
                 break;
             }
-            currentCommit = commitUtil.loadCommit(previousCommitId);
+            currentCommit = commitService.loadCommit(previousCommitId);
         }
     }
 }
