@@ -1,3 +1,5 @@
+package common;
+
 import java.nio.file.*;
 import java.io.IOException;
 import java.security.NoSuchAlgorithmException;
@@ -7,20 +9,23 @@ public class FileUtil {
     private static final String DOT_SFV = ".sfv";
     private static final String COMMIT = "commit";
     private static final String OBJECT = "object";
+    private static final String HEAD = "HEAD";
 
     private final Path rootPath;
     private final Path dotSfvPath;
     private final Path commitsPath;
     private final Path objectsPath;
+    private final Path headPath;
 
     public FileUtil() {
         this.rootPath = Paths.get(".");
         this.dotSfvPath = rootPath.resolve(DOT_SFV);
         this.commitsPath = Paths.get(dotSfvPath.toString(), COMMIT);
         this.objectsPath = Paths.get(dotSfvPath.toString(), OBJECT);
+        this.headPath = Paths.get(dotSfvPath.toString(), HEAD);
     }
 
-    public void initializeDotSfvDirectory() throws FileSystemException, IOException {
+    public void initializeDotSfv() throws FileSystemException, IOException {
         if (Files.exists(dotSfvPath)) {
             throw new FileSystemException("sfv repository already exists: " + dotSfvPath);
         }
@@ -87,6 +92,36 @@ public class FileUtil {
             }
         }
 
-        throw new FileSystemException("Commit not found for partial ID: " + partialCommitId);
+        throw new FileSystemException("commit.Commit not found for partial ID: " + partialCommitId);
+    }
+
+    public String getHEADValue() throws IOException {
+        if (!Files.exists(headPath)) {
+            throw new IOException("HEAD file does not exist: " + headPath);
+        }
+
+        String headContent = Files.readString(headPath).trim();
+        if (headContent.contains("\n") || headContent.contains("\r")) {
+            headContent = headContent.split("\\r?\\n")[0].trim();
+        }
+        return headContent;
+    }
+
+    public void updateHEADValue(String value) throws IOException {
+        try {
+            Files.writeString(headPath, value.trim() + System.lineSeparator());
+        } catch (IOException e) {
+            System.err.println("Failed to update HEAD: " + e.getMessage());
+            throw e;
+        }
+    }
+
+    public void initializeHEAD() throws IOException {
+        if (Files.exists(headPath)) {
+            System.out.println("HEAD file already exists.");
+        } else {
+            updateHEADValue("");
+            System.out.println("HEAD file initialized.");
+        }
     }
 }

@@ -1,7 +1,11 @@
+package commit;
+
+import common.FileUtil;
+import common.HashUtil;
+
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
-import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.NoSuchAlgorithmException;
@@ -11,7 +15,7 @@ import java.util.Map;
 
 public class CommitUtil {
 
-    private FileUtil fileUtil;
+    private final FileUtil fileUtil;
 
     public CommitUtil() {
         fileUtil = new FileUtil();

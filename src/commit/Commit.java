@@ -1,3 +1,5 @@
+package commit;
+
 import java.io.Serializable;
 import java.time.LocalDateTime;
 import java.util.Collections;
@@ -9,7 +11,7 @@ public class Commit implements Serializable {
      * 커밋 객체는 직렬화되서 파일로 commit 폴더에 저장된다.
      * 파일명은 커밋 객체의 id로 저장된다.
      * 
-     * Commit {
+     * commit.Commit {
      *     id: "5e67ec1be88ffb2be8d69b5c5490af8d42461e7b"
      *     message: "사용자가 입력한 커밋 메시지"
      *     timestamp: "커밋 생성 시간"
@@ -59,7 +61,7 @@ public class Commit implements Serializable {
 
     @Override
     public String toString() {
-        return String.format("Commit: %s\nDate: %s\nMessage: %s\nPrevious Commit: %s", 
+        return String.format("commit.Commit: %s\nDate: %s\nMessage: %s\nPrevious commit.Commit: %s",
             id.substring(0, 7), 
             timestamp, 
             message,

@@ -21,14 +21,16 @@ public class Main {
        // commands.add(new String[]{"commit", "-m", "second commit"});
 
       // TODO: bogil
-        DummyFileGenerator generator = new DummyFileGenerator();
-        generator.generateFiles(50,50); 
-      
-      commands.add(new String[]{"log"});
+//        DummyFileGenerator generator = new DummyFileGenerator();
+//        generator.generateFiles(50,50);
+//
+//      commands.add(new String[]{"log"});
 
         // 각 명령어 실행
+        CommandParser commandParser = new CommandParser();
+
         for (String[] command : commands) {
-            Manager.getInstance().getCommandParser().parseCommand(command);
+            commandParser.parseCommand(command);
             System.out.println("---------------------------------------------------");
         }
     }

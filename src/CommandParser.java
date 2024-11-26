@@ -1,12 +1,26 @@
+import checkout.CheckoutService;
+import commit.CommitService;
+import init.InitService;
+import log.LogService;
+import status.StatusService;
+
 import java.io.IOException;
 import java.security.NoSuchAlgorithmException;
 
 public class CommandParser {
 
-    private final Core core;
+    private final InitService initService;
+    private final CommitService commitService;
+    private final CheckoutService checkoutService;
+    private final StatusService statusService;
+    private final LogService logService;
 
-    public CommandParser(Core core) {
-        this.core = core;
+    public CommandParser() {
+        this.initService = new InitService();
+        this.commitService = new CommitService();
+        this.checkoutService = new CheckoutService();
+        this.statusService = new StatusService();
+        this.logService = new LogService();
     }
 
     public void parseCommand(String[] args) {
@@ -25,19 +39,9 @@ public class CommandParser {
         }
     }
 
-    public void printUsage() {
-        System.out.println("Usage: sfv <command> [options]");
-        System.out.println("Available commands:");
-        System.out.println("  init                      Initialize a new repository");
-        System.out.println("  commit -m <message>      Commit changes");
-        System.out.println("  log                       View commit history");
-        System.out.println("  status                    Check current status");
-        System.out.println("  checkout <commit-id>     Checkout a specific commit");
-    }
-
     public void handleInit() {
         try {
-            core.init();
+            initService.init();
             System.out.println("Repository initialized.");
         } catch (IOException e) {
             System.out.println(e.getMessage());
@@ -52,7 +56,7 @@ public class CommandParser {
                 return;
             }
             String message = args[2];
-            String commitId = core.commit(message);
+            String commitId = commitService.commit(message);
             System.out.println("[" + commitId.substring(0, 7) + "] " + message);
         } catch (IOException | NoSuchAlgorithmException e) {
             System.out.println(e.getMessage());
@@ -66,7 +70,7 @@ public class CommandParser {
                 return;
             }
             String commitId = args[1];
-            core.checkout(commitId, true);
+            checkoutService.checkout(commitId, true);
             System.out.println("Checked out commit: " + commitId.substring(0, 7));
         } catch (IOException e) {
             System.out.println(e.getMessage());
@@ -75,7 +79,7 @@ public class CommandParser {
 
     public void handleStatus() {
         try {
-            core.getStatus();
+            statusService.getStatus();
         } catch (IOException | NoSuchAlgorithmException e) {
             System.out.println(e.getMessage());
         }
@@ -83,10 +87,20 @@ public class CommandParser {
 
     public void handleLog() {
         try {
-            core.getLog();
+            logService.getLog();
         } catch (IOException e) {
             System.out.println(e.getMessage());
         }
+    }
+
+    public void printUsage() {
+        System.out.println("Usage: sfv <command> [options]");
+        System.out.println("Available commands:");
+        System.out.println("  init                      Initialize a new repository");
+        System.out.println("  commit -m <message>      commit.Commit changes");
+        System.out.println("  log                       View commit history");
+        System.out.println("  status                    Check current status");
+        System.out.println("  checkout <commit-id>     Checkout a specific commit");
     }
 
 }
