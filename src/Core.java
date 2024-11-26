@@ -1,4 +1,7 @@
+
 import java.io.File;
+
+import timer.PerformanceTimer;
 import java.io.IOException;
 import java.nio.file.*;
 import java.security.NoSuchAlgorithmException;
@@ -26,43 +29,56 @@ public class Core {
         fileUtil.initializeDotSfvDirectory();
         head.initialize();
     }
-    public String commit(String message) throws IOException, NoSuchAlgorithmException {
-        fileUtil.validateSfvRepository();
 
-        String headValue = head.getValue();
-        Commit lastCommit = null;
+     // Commit
+     public String commit(String message) throws IOException, NoSuchAlgorithmException {
+         fileUtil.validateSfvRepository();
+        
+         // 1. 변경된 파일 찾기
+         PerformanceTimer.start("find-modified-files");
+         List<Path> modifiedFiles = findModifiedFiles3();
+         PerformanceTimer.stop("find-modified-files");
+         System.out.println("\nfind-modified-files Performance:");
+         PerformanceTimer.printStats("find-modified-files");
+         if (modifiedFiles.isEmpty()) {
+             throw new FileSystemException("Nothing to commit.");
+         }
 
-        if (!headValue.isEmpty()) {
-            lastCommit = commitUtil.loadCommit(headValue);
-        }
+//         PerformanceTimer.start("hash-calculation");
+//         // 2. 변경된 파일들의 해시 계산 (병렬 처리) - ParallelStream : 자동 병렬처리. 수동 병렬처리 연구 해보셈 TODO
+//         Map<Path, String> fileHashes = new ConcurrentHashMap<>();
+//         modifiedFiles.parallelStream().forEach(file -> {
+//             try {
+//                 String hash = fileUtil.calculateFileHash(file);
+//                 fileHashes.put(file, hash);
+//                 fileUtil.saveObject(hash, Files.readAllBytes(file));
+//             } catch (IOException | NoSuchAlgorithmException e) {
+//                 throw new RuntimeException(e);
+//             }
+//         });
+//         PerformanceTimer.stop("hash-calculation");
+//         System.out.println("\nHash Calculation Performance:");
+//         PerformanceTimer.printStats("hash-calculation");
+        //2. 병렬 처리를 위한 executor 생성 및 해시 계산  //
+        PerformanceTimer.start("hash-calculation");
+        FileHashExecutor executor = new FileHashExecutor(Runtime.getRuntime().availableProcessors());
+        Map<Path, String> fileHashes = executor.calculateHashes(modifiedFiles);
+        executor.shutdown();
+        PerformanceTimer.stop("hash-calculation");
 
-        List<Path> modifiedFiles = findModifiedFiles(lastCommit);
+        // 성능 통계 출력
+        System.out.println("\nHash Calculation Performance:");
+        PerformanceTimer.printStats("hash-calculation");
+        
 
-        if (modifiedFiles.isEmpty()) {
-            throw new FileSystemException("Nothing to commit.");
-        }
+         // 3. 커밋 객체 생성 및 저장
+         Commit commit = commitUtil.createCommit(message, fileUtil.getHEADValue(), fileHashes);
 
-        Map<Path, String> fileHashes = new ConcurrentHashMap<>();
+         // 4. HEAD 업데이트
+         fileUtil.updateHEADValue(commit.getId());
 
-        modifiedFiles.forEach(file -> {
-            try {
-                // Calculate hash for each modified file
-                String hash = fileUtil.calculateFileHash(file);
-                fileHashes.put(file, hash);
-
-                // Save the file content to object storage with the hash as the filename
-                fileUtil.saveObject(hash, Files.readAllBytes(file)); // Save file content in object storage
-            } catch (IOException | NoSuchAlgorithmException e) {
-                System.err.println("Error processing file: " + file + " - " + e.getMessage());
-            }
-        });
-
-        Commit commit = commitUtil.createCommit(message, headValue, fileHashes);
-
-        String commitId = commit.getId();
-        commitUtil.saveCommit(commit);
-
-        head.setValue(commitId);
+         return commit.getId();
+     }
 
         return commitId;
     }
@@ -219,23 +235,137 @@ public class Core {
             currentCommit = commitUtil.loadCommit(previousCommitId);
         }
     }
-    private List<Path> findModifiedFiles(Commit lastCommit) throws IOException {
-        return Files.walk(fileUtil.getRootPath())
-                .filter(Files::isRegularFile)
-                .filter(path -> !path.toString().contains(".sfv")) // .sfv 제외
-                .filter(path -> !path.toString().contains(".git")) // .git 제외
-                .map(path -> {
-                    try {
-                        String currentHash = HashUtil.sha1FromFile(path);
-                        String storedHash = lastCommit == null ? null : lastCommit.getFileHashes().get(path.toString());
-                        return !Objects.equals(currentHash, storedHash) ? path : null;
-                    } catch (IOException | NoSuchAlgorithmException e) {
-                        System.err.println("파일 처리 중 오류: " + path + " - " + e.getMessage());
-                        return null;
+
+
+    // TODO : 병렬 처리 적용 가능
+    private List<Path> findModifiedFiles() throws IOException {
+        List<Path> modifiedFiles = new ArrayList<>();
+        List<Path> allFiles = new ArrayList<>();
+        
+        // 1. 모든 대상 파일 수집
+        Files.walk(fileUtil.getRootPath())
+            .filter(path -> !path.startsWith(fileUtil.getDotSfvPath()))
+            .filter(path -> !path.toString().contains("/."))
+            .filter(path -> !path.startsWith(fileUtil.getRootPath().resolve("out")))
+            .filter(Files::isRegularFile)
+            .filter(Files::exists)
+            .forEach(allFiles::add);
+
+        // 2. ChunkedHashCalculator 초기화
+        ChunkedHashCalculator hashCalculator = new ChunkedHashCalculator(
+            Runtime.getRuntime().availableProcessors() //cpu 코어 수 만큼 스레드 할당
+        );
+
+        try {
+            // 3. HEAD 값과 마지막 커밋 가져오기
+            String head = fileUtil.getHEADValue();
+            Commit lastCommit = head.isEmpty() ? null : commitUtil.loadCommit(head);
+
+            // 4. 각 파일에 대해 청크 기반 해시 계산 및 비교
+            for (Path path : allFiles) {
+                try {
+                    String currentHash = hashCalculator.calculateFileHash(path);
+                    String storedHash = "__firsthash__";
+
+                    if (lastCommit != null) {
+                        Path relativePath = fileUtil.getRootPath().relativize(path);
+                        String normalizedPath = relativePath.normalize().toString();
+                        storedHash = lastCommit.getFileHashes().getOrDefault(normalizedPath, "");
                     }
-                })
-                .filter(Objects::nonNull)
-                .collect(Collectors.toList());
+
+                    if (!currentHash.equals(storedHash)) {
+                        modifiedFiles.add(path);
+                    }
+                } catch (NoSuchAlgorithmException e) {
+                    System.err.println("Warning: Hash calculation failed for file: " + path);
+                }
+            }
+        } finally {
+            // 5. 리소스 정리
+            hashCalculator.shutdown();
+        }
+
+        return modifiedFiles;
+    }
+
+     // TODO : 병렬 처리 적용 가능
+     private List<Path> findModifiedFiles2() throws IOException {
+         List<Path> modifiedFiles = new ArrayList<>();
+         Files.walk(fileUtil.getRootPath())
+             .filter(path -> !path.startsWith(fileUtil.getDotSfvPath()))
+             .filter(path -> !path.toString().contains("/."))  // .으로 시작하는 모든 디렉토리 제외
+             .filter(path -> !path.startsWith(fileUtil.getRootPath().resolve("out")))  // out 디렉토리 제외
+             .filter(Files::isRegularFile)
+             .filter(Files::exists)
+             .forEach(path -> {
+                 try {
+                     String currentHash = fileUtil.calculateFileHash(path);
+                    
+                     // 저장된 해시값 가져오기
+                     String head = fileUtil.getHEADValue();
+                     String storedHash = "__firsthash__";
+                    
+                     if (!head.isEmpty()) {
+                         Commit lastCommit = commitUtil.loadCommit(head);
+                         if (lastCommit != null) {
+                             Path relativePath = fileUtil.getRootPath().relativize(path);
+                             String normalizedPath = relativePath.normalize().toString();
+                             storedHash = lastCommit.getFileHashes().getOrDefault(normalizedPath, "");
+                         }
+                     }
+                    
+ //                    System.out.println("currentHash = " + currentHash + ", storedHash = " + storedHash);
+                     if (!currentHash.equals(storedHash)) {
+                         modifiedFiles.add(path);
+                     }
+                 } catch (IOException | NoSuchAlgorithmException e) {
+                     System.err.println("Warning: Could not access file: " + path);
+                 }
+             });
+         return modifiedFiles;
+     }
+
+    private List<Path> findModifiedFiles3() throws IOException {
+        List<Path> modifiedFiles = new ArrayList<>();
+        List<Path> allFiles = new ArrayList<>();
+        
+        // 1. 모든 대상 파일 수집
+        Files.walk(fileUtil.getRootPath())
+            .filter(path -> !path.startsWith(fileUtil.getDotSfvPath()))
+            .filter(path -> !path.toString().contains("/."))
+            .filter(path -> !path.startsWith(fileUtil.getRootPath().resolve("out")))
+            .filter(Files::isRegularFile)
+            .filter(Files::exists)
+            .forEach(allFiles::add);
+
+        // 2. ChunkedHashCalculator2 초기화 (싱글스레드)
+        ChunkedHashCalculator2 hashCalculator = new ChunkedHashCalculator2();
+
+        // 3. HEAD 값과 마지막 커밋 가져오기
+        String head = fileUtil.getHEADValue();
+        Commit lastCommit = head.isEmpty() ? null : commitUtil.loadCommit(head);
+
+        // 4. 각 파일에 대해 청크 기반 해시 계산 및 비교
+        for (Path path : allFiles) {
+            try {
+                String currentHash = hashCalculator.calculateFileHash(path);
+                String storedHash = "__firsthash__";
+
+                if (lastCommit != null) {
+                    Path relativePath = fileUtil.getRootPath().relativize(path);
+                    String normalizedPath = relativePath.normalize().toString();
+                    storedHash = lastCommit.getFileHashes().getOrDefault(normalizedPath, "");
+                }
+
+                if (!currentHash.equals(storedHash)) {
+                    modifiedFiles.add(path);
+                }
+            } catch (NoSuchAlgorithmException e) {
+                System.err.println("Warning: Hash calculation failed for file: " + path);
+            }
+        }
+
+        return modifiedFiles;
     }
 
 
