@@ -66,7 +66,7 @@ public class CommandParser {
                 return;
             }
             String commitId = args[1];
-            core.checkout(commitId);
+            core.checkout(commitId, true);
             System.out.println("Checked out commit: " + commitId.substring(0, 7));
         } catch (IOException e) {
             System.out.println(e.getMessage());

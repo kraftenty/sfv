@@ -1,33 +1,33 @@
-import timer.PerformanceTimer;
 
+import java.io.File;
+
+import timer.PerformanceTimer;
 import java.io.IOException;
-import java.nio.file.FileSystemException;
-import java.nio.file.Files;
-import java.nio.file.Path;
+import java.nio.file.*;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
-import java.nio.file.StandardCopyOption;
+import java.util.stream.Collectors;
 
-/**
- * init, commit, checkout, status, log
- * 5개의 핵심 기능을 담당하는 클래스
- */
 public class Core {
 
-    private FileUtil fileUtil;
-    private CommitUtil commitUtil;
+    private final FileUtil fileUtil;
+    private final CommitUtil commitUtil;
+    private final Head head;
 
     public Core() {
         this.fileUtil = new FileUtil();
         this.commitUtil = new CommitUtil();
+        this.head = new Head(fileUtil.getDotSfvPath());
     }
 
     // Init
     public void init() throws IOException {
         fileUtil.initializeDotSfvDirectory();
+        head.initialize();
     }
 
      // Commit
@@ -80,73 +80,140 @@ public class Core {
          return commit.getId();
      }
 
-    // TODO : 병렬 처리 적용 가능
-    // Checkout
-    public void checkout(String commitId) throws IOException {
+        return commitId;
+    }
+    public void checkout(String commitId, boolean force) throws IOException {
+        // Step 1: .sfv 저장소 유효성 검사
         fileUtil.validateSfvRepository();
 
-        // 1. 커밋 객체 로드
-        Commit commit = commitUtil.loadCommit(commitId);
-        if (commit == null) {
-            throw new FileSystemException("Commit not found: " + commitId);
+        // Step 2: HEAD 값 확인 및 전체 커밋 ID 로드
+        String headValue = head.getValue();
+        System.out.println("Current HEAD value: " + headValue);
+
+        String fullCommitId = fileUtil.findFullCommitId(commitId);
+        System.out.println("Target Commit ID: " + fullCommitId);
+
+        Commit targetCommit = commitUtil.loadCommit(fullCommitId);
+        if (targetCommit == null) {
+            throw new IOException("Target commit not found: " + commitId);
+        }
+        System.out.println("Loaded target commit: " + targetCommit.getId());
+
+        // Step 3: 변경된 파일 확인
+        if (!force) {
+            Commit currentCommit = headValue.isEmpty() ? null : commitUtil.loadCommit(headValue);
+            List<Path> modifiedFiles = findModifiedFiles(currentCommit);
+            System.out.println("Modified files: " + modifiedFiles);
+
+            if (!modifiedFiles.isEmpty()) {
+                throw new IOException("Uncommitted changes detected. Use 'force' to discard changes.");
+            }
         }
 
-        // 2. 현재 작업 디렉토리의 변경사항 확인
-        List<Path> modifiedFiles = findModifiedFiles();
-        if (!modifiedFiles.isEmpty()) {
-            throw new FileSystemException("You have local changes. Please commit or discard them first.");
-        }
+        // Step 4: 워킹 디렉토리를 목표 커밋 상태로 복원
+        System.out.println("Restoring working directory...");
+        restoreWorkingDirectory(targetCommit);
 
-        // 3. 커밋의 파일 상태로 복원
-        for (Map.Entry<String, String> entry : commit.getFileHashes().entrySet()) {
-            Path filePath = fileUtil.getRootPath().resolve(entry.getKey());
-            String hash = entry.getValue();
-
-            // 파일 디렉토리가 없으면 생성
-            Files.createDirectories(filePath.getParent());
-
-            // objects에서 파일 내용을 복사
-            Path objectPath = fileUtil.getObjectPath(hash);
-            Files.copy(objectPath, filePath, StandardCopyOption.REPLACE_EXISTING);
-        }
-
-        // 4. HEAD 업데이트
-        fileUtil.updateHEADValue(commitId);
+        // Step 5: HEAD 업데이트
+        head.setValue(fullCommitId);
+        System.out.println("HEAD updated to commit: " + fullCommitId.substring(0, 7));
     }
 
+    // 디버깅 추가: restoreWorkingDirectory
+    private void restoreWorkingDirectory(Commit targetCommit) throws IOException {
+        Map<String, String> targetFileHashes = targetCommit.getFileHashes();
+
+        // Step 1: 모든 현재 파일 찾기
+        List<Path> allFiles = Files.walk(fileUtil.getRootPath())
+                .filter(Files::isRegularFile)
+                .filter(path -> !path.toString().contains(".sfv")) // .sfv 디렉토리 제외
+                .filter(path -> !path.toString().contains(".git")) // .git 디렉토리 제외
+                .collect(Collectors.toList());
+
+        // Step 2: 커밋에 포함되지 않은 파일 삭제 (병렬 처리)
+        List<Path> filesToDelete = allFiles.stream()
+                .filter(file -> {
+                    String relativePath = fileUtil.getRootPath().relativize(file).toString();
+                    return !targetFileHashes.containsKey(relativePath);
+                })
+                .collect(Collectors.toList());
+
+        filesToDelete.parallelStream().forEach(file -> {
+            try {
+                Files.delete(file);
+                System.out.println("Deleted: " + file);
+            } catch (IOException e) {
+                // 예외 처리: 로깅 또는 재시도 로직 추가 가능
+                System.err.println("Failed to delete: " + file + " - " + e.getMessage());
+            }
+        });
+
+        // Step 3: 커밋 파일 복원 (병렬 처리)
+        targetFileHashes.entrySet().parallelStream().forEach(entry -> {
+            String relativePath = entry.getKey();
+            String hash = entry.getValue();
+            String rootPathStr = fileUtil.getRootPath().toString();
+            Path fullPath = Paths.get(rootPathStr, relativePath);
+
+            try {
+                System.out.println("Restoring file: " + relativePath);
+                System.out.println("Target absolute path: " + fullPath);
+
+                Path objectPath = fileUtil.getObjectPath(hash);
+                if (Files.exists(objectPath)) {
+                    Files.createDirectories(fullPath.getParent()); // 상위 디렉토리 생성
+                    Files.write(fullPath, Files.readAllBytes(objectPath)); // 파일 복원
+                    System.out.println("Restored: " + fullPath);
+                } else {
+                    throw new IOException("Missing object file for hash: " + hash);
+                }
+            } catch (IOException e) {
+                // 예외 처리: 로깅 또는 재시도 로직 추가 가능
+                System.err.println("Failed to restore file: " + relativePath + " - " + e.getMessage());
+            }
+        });
+
+        System.out.println("Working directory restored to commit: " + targetCommit.getId());
+    }
+
+
+
+
+
     // Status
-    // TODO : 병렬 처리 가능
     public void getStatus() throws IOException, NoSuchAlgorithmException {
         fileUtil.validateSfvRepository();
 
-        // 1. 현재 커밋 정보 가져오기
-        String head = fileUtil.getHEADValue();
-        Commit currentCommit = head.isEmpty() ? null : commitUtil.loadCommit(head);
-        
-        // 2. 변경된 파일 찾기
-        List<Path> modifiedFiles = findModifiedFiles();
+        // HEAD에서 현재 커밋 정보 가져오기
+        String headValue = head.getValue(); // HEAD 값을 한 번만 읽음
+        Commit currentCommit = headValue.isEmpty() ? null : commitUtil.loadCommit(headValue);
 
-        // 3. 상태 출력
+        // 변경된 파일 찾기
+        List<Path> modifiedFiles = findModifiedFiles(currentCommit); // 커밋 객체를 전달
+
+        // 현재 상태 출력
         System.out.println("status for commit: " + (currentCommit == null ? "none" :
                 currentCommit.getId().substring(0, 7) + " " + currentCommit.getMessage()));
 
-                if (modifiedFiles.isEmpty()) {
+        // 변경된 파일 출력
+        if (modifiedFiles.isEmpty()) {
             System.out.println("No changes detected");
         } else {
             System.out.println("new changes:");
-            for (Path file : modifiedFiles) {
-                // 상대 경로로 변환하여 출력
-                Path relativePath = fileUtil.getRootPath().relativize(file);
-                System.out.println("\tmodified: " + relativePath);
-            }
+            modifiedFiles.parallelStream()
+                    .forEach(file -> {
+                        Path relativePath = fileUtil.getRootPath().relativize(file);
+                        System.out.println("\tmodified: " + relativePath);
+                    });
         }
     }
+
 
     // Log
     public void getLog() throws IOException {
         fileUtil.validateSfvRepository();
 
-        String currentCommitId = fileUtil.getHEADValue();
+        String currentCommitId = head.getValue();
         if (currentCommitId.isEmpty()) {
             System.out.println("No commits yet");
             return;
@@ -168,6 +235,7 @@ public class Core {
             currentCommit = commitUtil.loadCommit(previousCommitId);
         }
     }
+
 
     // TODO : 병렬 처리 적용 가능
     private List<Path> findModifiedFiles() throws IOException {
@@ -299,5 +367,8 @@ public class Core {
 
         return modifiedFiles;
     }
+
+
+
 
 }

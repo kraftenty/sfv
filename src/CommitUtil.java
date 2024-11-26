@@ -42,28 +42,37 @@ public class CommitUtil {
     public Commit loadCommit(String commitId) throws IOException {
         try {
             Path commitPath = fileUtil.getCommitPath(commitId);
+            System.out.println("커밋을 로드 중: " + commitPath);
+
             if (!Files.exists(commitPath)) {
-                return null;
+                System.err.println("커밋 파일이 존재하지 않습니다: " + commitPath);
+                return null; // 커밋 파일이 없으면 null 반환
             }
-            ObjectInputStream ois = new ObjectInputStream(Files.newInputStream(commitPath));
-            Commit commit = (Commit) ois.readObject();
-            ois.close();
-            return commit;
+
+            if (Files.size(commitPath) == 0) {
+                System.err.println("커밋 파일이 비어 있습니다: " + commitPath);
+                return null; // 커밋 파일이 비어 있으면 null 반환
+            }
+
+            try (ObjectInputStream ois = new ObjectInputStream(Files.newInputStream(commitPath))) {
+                return (Commit) ois.readObject(); // 커밋 객체를 읽어 반환
+            }
         } catch (ClassNotFoundException e) {
-            throw new IOException("Failed to load commit: " + commitId, e);
+            throw new IOException("클래스를 찾을 수 없습니다: " + commitId, e);
+        } catch (IOException e) {
+            throw new IOException("커밋 로드 중 오류 발생: " + commitId, e);
         }
     }
 
-    private void saveCommit(Commit commit) {
-        try {
-            Path commitPath = fileUtil.getCommitPath(commit.getId());
-            ObjectOutputStream oos = new ObjectOutputStream(Files.newOutputStream(commitPath));
-            oos.writeObject(commit);
-            oos.close();
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
+
+
+    public void saveCommit(Commit commit) throws IOException {
+        Path commitPath = fileUtil.getCommitPath(commit.getId());
+        try (ObjectOutputStream oos = new ObjectOutputStream(Files.newOutputStream(commitPath))) {
+            oos.writeObject(commit); // 커밋 객체를 직렬화하여 파일로 저장
         }
     }
+
 
     // commit id 생성 메서드
     private String generateCommitId(String message) throws NoSuchAlgorithmException {
