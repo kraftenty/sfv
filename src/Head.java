@@ -39,12 +39,6 @@ public class Head {
         }
     }
 
-    // 브랜치로 HEAD 설정
-    public void setBranch(String branchName) throws IOException {
-        String branchRef = "ref: refs/heads/" + branchName.trim();
-        setValue(branchRef);
-    }
-
     // HEAD 파일 초기화
     public void initialize() throws IOException {
         if (Files.exists(headPath)) {
@@ -55,27 +49,4 @@ public class Head {
         }
     }
 
-    // 브랜치 이름 가져오기
-    public String getBranchName() throws IOException {
-        if (!Files.exists(headPath)) {
-            return null;
-        }
-        String headContent = Files.readString(headPath).trim();
-        if (headContent.startsWith("ref:")) {
-            return headContent.substring(4).trim().replace("refs/heads/", "");
-        }
-        return null; // 브랜치를 참조하지 않는 경우
-    }
-
-    // HEAD 파일 디버깅 출력
-    public void debug() throws IOException {
-        if (!Files.exists(headPath)) {
-            System.err.println("HEAD file does not exist.");
-            return;
-        }
-
-        String headContent = Files.readString(headPath);
-        System.out.println("HEAD file contents:");
-        System.out.println(headContent);
-    }
 }
