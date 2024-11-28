@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.*;
+import java.util.concurrent.*;
 
 public class CheckoutService {
 
@@ -44,7 +45,7 @@ public class CheckoutService {
         }
 
         // 4-2. 파일 갱신 (복원, 수정) TODO : 병렬처리 가능 구간
-        restoreFileV1(targetCommitMetadataMap, currentCommitMetadataMap); // TODO : 여기서 알고리즘 갈아끼우셈
+        restoreFileV3(targetCommitMetadataMap, currentCommitMetadataMap); // TODO : 여기서 알고리즘 갈아끼우셈
 
         // 5. 빈 디렉토리 정리
         cleanEmptyDirectories(FileUtil.getRootPath());
@@ -73,13 +74,114 @@ public class CheckoutService {
     }
 
     // V2 :
-    private static void restoreFileV2(String targetCommitMetadataMap, Map<String, String> currentCommitMetadataMap) throws IOException {
-        // 알고리즘 구현
+    private static void restoreFileV2(Map<String, String> targetCommitMetadataMap, Map<String, String> currentCommitMetadataMap) throws IOException {
+        int threadCount = 2; // 3개가 최적
+        BlockingQueue<List<Map.Entry<String, String>>> workQueue = new LinkedBlockingQueue<>();
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        List<Future<?>> futures = new ArrayList<>();
+
+        // 1. 생산자: 작업을 청크 단위로 분할하여 큐에 추가
+        Future<?> producerFuture = executor.submit(() -> {
+            try {
+                int chunkSize = 100;
+                List<Map.Entry<String, String>> currentChunk = new ArrayList<>(chunkSize);
+                
+                for (Map.Entry<String, String> entry : targetCommitMetadataMap.entrySet()) {
+                    currentChunk.add(entry);
+                    if (currentChunk.size() >= chunkSize) {
+                        workQueue.add(new ArrayList<>(currentChunk));
+                        currentChunk.clear();
+                    }
+                }
+                
+                // 마지막 청크 처리
+                if (!currentChunk.isEmpty()) {
+                    workQueue.add(new ArrayList<>(currentChunk));
+                }
+                
+                // 작업 완료 표시
+                for (int i = 0; i < threadCount; i++) {
+                    workQueue.add(Collections.emptyList());
+                }
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
+
+        // 2. 소비자: 각 워커 스레드가 큐에서 작업을 가져와 처리
+        for (int i = 0; i < threadCount; i++) {
+            Future<?> future = executor.submit(() -> {
+                try {
+                    while (true) {
+                        List<Map.Entry<String, String>> chunk = workQueue.take();
+                        if (chunk.isEmpty()) {
+                            break;
+                        }
+                        
+                        for (Map.Entry<String, String> entry : chunk) {
+                            String targetFilePath = entry.getKey();
+                            String targetFileHash = entry.getValue().split(",")[2];
+                            
+                            // 현재 커밋에 파일이 없거나 해시값이 다른 경우 복원
+                            if (!currentCommitMetadataMap.containsKey(targetFilePath) || 
+                                !currentCommitMetadataMap.get(targetFilePath).split(",")[2].equals(targetFileHash)) {
+                                Path filePath = FileUtil.getRootPath().resolve(targetFilePath);
+                                Files.createDirectories(filePath.getParent());
+                                System.out.println("\trestoring " + filePath);
+                                Files.copy(FileUtil.getObjectPath(targetFileHash), filePath, StandardCopyOption.REPLACE_EXISTING);
+                            }
+                        }
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+            futures.add(future);
+        }
+
+        // 3. 모든 작업 완료 대기
+        try {
+            producerFuture.get();
+            for (Future<?> future : futures) {
+                future.get();
+            }
+        } catch (InterruptedException | ExecutionException e) {
+            throw new IOException("Error restoring files", e);
+        } finally {
+            executor.shutdown();
+            try {
+                if (!executor.awaitTermination(60, TimeUnit.SECONDS)) {
+                    executor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                executor.shutdownNow();
+            }
+        }
     }
 
     // V3 :
-    private static void restoreFileV3(String targetCommitMetadataMap, Map<String, String> currentCommitMetadataMap) throws IOException {
-        // 알고리즘 구현
+    private static void restoreFileV3(Map<String, String> targetCommitMetadataMap, Map<String, String> currentCommitMetadataMap) throws IOException {
+        targetCommitMetadataMap.entrySet()
+            .parallelStream()
+            .forEach(entry -> {
+                try {
+                    String targetFilePath = entry.getKey();
+                    String targetFileHash = entry.getValue().split(",")[2];
+                    
+                    // 현재 커밋에 파일이 없거나 해시값이 다른 경우 복원
+                    if (!currentCommitMetadataMap.containsKey(targetFilePath) || 
+                        !currentCommitMetadataMap.get(targetFilePath).split(",")[2].equals(targetFileHash)) {
+                        Path filePath = FileUtil.getRootPath().resolve(targetFilePath);
+                        Files.createDirectories(filePath.getParent());
+                        System.out.println("\trestoring " + filePath);
+                        Files.copy(FileUtil.getObjectPath(targetFileHash), filePath, StandardCopyOption.REPLACE_EXISTING);
+                    }
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            });
     }
 
     // 빈 디렉토리를 정리하는 헬퍼 메서드

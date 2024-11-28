@@ -117,7 +117,7 @@ public class ModifyDetector {
         String head = FileUtil.getHEADValue();
         Commit lastCommit = head.isEmpty() ? null : CommitService.loadCommitFromCommitDirectory(head);
 
-        int threadCount = 3; // 3개가 가장 빠름
+        int threadCount = 4; // 3개가 가장 빠름
 
         // 2. 작업 큐 사용 - 더 작은 단위로 작업 분할
         BlockingQueue<List<Path>> workQueue = new LinkedBlockingQueue<>();
