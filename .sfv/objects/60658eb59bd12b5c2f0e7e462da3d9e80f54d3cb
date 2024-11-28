@@ -1,7 +1,0 @@
-# Super Fast Version-Control-System
-usage
-$ sfv init
-$ sfv commit -m "commit message"
-$ sfv status
-$ stv log
-$ sfv checkout [target commit ID]

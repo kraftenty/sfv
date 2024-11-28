@@ -112,4 +112,22 @@ public class FileUtil {
 
         return matches.get(0);
     }
+
+
+    public static void deleteSfvRepository() throws IOException {
+        if (!Files.exists(dotSfvPath)) {
+            return;
+        }
+
+        // 하위 디렉토리부터 삭제하기 위해 역순으로 순회
+        Files.walk(dotSfvPath)
+                .sorted((a, b) -> -a.compareTo(b))  // 역순 정렬
+                .forEach(path -> {
+                    try {
+                        Files.delete(path);
+                    } catch (IOException e) {
+                        System.err.println("Warning: Could not delete " + path);
+                    }
+                });
+    }
 }

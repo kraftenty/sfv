@@ -93,7 +93,10 @@ public class CommandParser {
 
     public void handleStatus() {
         try {
+            long start = System.currentTimeMillis();
             statusService.getStatus();
+            long end = System.currentTimeMillis();
+            System.out.println("status time : " + (end - start));
         } catch (IOException | NoSuchAlgorithmException e) {
             System.err.println(e.getMessage());
         }

@@ -1,3 +1,6 @@
+import util.FileUtil;
+
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -7,7 +10,8 @@ public class Main {
         List<String[]> commands = new ArrayList<>();
         commands.add(new String[]{"init"});
         commands.add(new String[]{"status"});
-        commands.add(new String[]{"commit", "-m", "first commit"});
+
+//        commands.add(new String[]{"commit", "-m", "first commit"});
 //        commands.add(new String[]{"status"});
 //        commands.add(new String[]{"commit", "-m", "second commit"});
 //        commands.add(new String[]{"status"});
@@ -19,6 +23,12 @@ public class Main {
         CommandParser commandParser = new CommandParser();
         for (String[] command : commands) {
             commandParser.parseCommand(command);
+        }
+
+        try {
+            FileUtil.deleteSfvRepository();
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 }
