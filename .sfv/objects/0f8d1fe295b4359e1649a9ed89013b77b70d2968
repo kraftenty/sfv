@@ -60,7 +60,6 @@ public class CommandParser {
 
     public void handleCommit(String[] args) {
         try {
-            long start = System.currentTimeMillis();
             // commit -m "msg" 형식이 잘 맞춰졌는지 확인
             if (args.length < 3 || !args[1].equals("-m")) {
                 System.out.println("usage: sfv commit -m \"commit message\"");
@@ -68,8 +67,6 @@ public class CommandParser {
             }
             String message = args[2];
             commitService.commit(message);
-            long end = System.currentTimeMillis();
-            System.out.println("commit time : " + (end - start));
         } catch (IOException | NoSuchAlgorithmException e) {
             System.err.println(e.getMessage());
         }
@@ -77,15 +74,12 @@ public class CommandParser {
 
     public void handleCheckout(String[] args) {
         try {
-            long start = System.currentTimeMillis();
             if (args.length < 2) {
                 System.out.println("Usage: sfv checkout <commit-id>");
                 return;
             }
             String partialCommitId = args[1];
             checkoutService.checkout(partialCommitId);
-            long end = System.currentTimeMillis();
-            System.out.println("checkout time : " + (end - start));
         } catch (IOException e) {
             System.err.println("error occurred while checkout : " + e.getMessage());
         }
