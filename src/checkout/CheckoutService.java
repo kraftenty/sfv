@@ -1,6 +1,5 @@
 package checkout;
 
-import commit.Commit;
 import commit.CommitService;
 import commit.ModifyDetector;
 import util.FileUtil;
@@ -61,9 +60,10 @@ public class CheckoutService {
         for (Map.Entry<String, String> entry : targetCommitMetadataMap.entrySet()) {
             String targetFilePath = entry.getKey();
             String targetFileHash = entry.getValue().split(",")[2];
-            String currentFileHash = currentCommitMetadataMap.get(targetFilePath).split(",")[2];
-            // 현재 커밋의 해시값과 타겟 커밋의 해시값이 다른 경우에만 복사
-            if (!targetFileHash.equals(currentFileHash)) {
+            
+            // 현재 커밋에 파일이 없거나 해시값이 다른 경우 복원
+            if (!currentCommitMetadataMap.containsKey(targetFilePath) || 
+                !currentCommitMetadataMap.get(targetFilePath).split(",")[2].equals(targetFileHash)) {
                 Path filePath = FileUtil.getRootPath().resolve(targetFilePath);
                 Files.createDirectories(filePath.getParent());
                 System.out.println("\trestoring " + filePath);

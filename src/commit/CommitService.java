@@ -12,24 +12,43 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 public class CommitService {
 
     public void commit(String message) throws IOException, NoSuchAlgorithmException {
         FileUtil.validateSfvRepository();
 
-        // 1. 변경된 파일 찾기
+        // 1. 현재 작업 디렉토리의 모든 파일 목록 가져오기
+        Set<Path> currentFiles = Files.walk(FileUtil.getRootPath())
+                .filter(path -> !path.startsWith(FileUtil.getDotSfvPath()))
+                .filter(path -> !path.toString().contains("/."))
+                .filter(path -> !path.toString().contains("/out"))
+                .filter(Files::isRegularFile)
+                .collect(Collectors.toSet());
+
+        // 2. 변경된 파일 찾기
         List<Path> modifiedFiles = ModifyDetector.findModifiedFiles();
         if (modifiedFiles.isEmpty()) {
             throw new FileSystemException("Nothing to commit.");
         }
 
-        Map<Path, String> fileHashes = getFileHashMapV1(modifiedFiles); // TODO : 여기서 알고리즘 갈아끼우기
+        Map<Path, String> fileHashes = getFileHashMapV1(modifiedFiles);
 
+        // 3. 커밋 객체 생성 및 저장 (현재 존재하는 파일만 포함)
+        Map<String, String> newFileMetadata = new HashMap<>();
+        for (Path file : currentFiles) {
+            String normalizedPath = FileUtil.getRootPath().relativize(file).normalize().toString();
+            long fileSize = FileUtil.getFileSize(file);
+            long lastModifiedTime = FileUtil.getLastModifiedTime(file);
+            String hash = FileUtil.calculateFileHash(file);
+            String fileInfo = fileSize + "," + lastModifiedTime + "," + hash;
+            newFileMetadata.put(normalizedPath, fileInfo);
+        }
 
-        // 3. 커밋 객체 생성 및 저장
-        Commit commit = createCommit(message, FileUtil.getHEADValue(), fileHashes);
+        Commit commit = new Commit(generateCommitId(message), message, FileUtil.getHEADValue(), newFileMetadata);
         saveCommitToCommitDirectory(commit);
 
         // 4. HEAD 업데이트

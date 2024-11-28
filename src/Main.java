@@ -8,10 +8,10 @@ public class Main {
     public static void main(String[] args) {
         // 명령어 자동화를 위한 리스트
         List<String[]> commands = new ArrayList<>();
-        commands.add(new String[]{"init"});
-        commands.add(new String[]{"status"});
+//        commands.add(new String[]{"init"});
+//        commands.add(new String[]{"status"});
 
-//        commands.add(new String[]{"commit", "-m", "first commit"});
+        commands.add(new String[]{"commit", "-m", "first commit"});
 //        commands.add(new String[]{"status"});
 //        commands.add(new String[]{"commit", "-m", "second commit"});
 //        commands.add(new String[]{"status"});
@@ -25,10 +25,10 @@ public class Main {
             commandParser.parseCommand(command);
         }
 
-        try {
-            FileUtil.deleteSfvRepository();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+//        try {
+//            FileUtil.deleteSfvRepository();
+//        } catch (IOException e) {
+//            e.printStackTrace();
+//        }
     }
 }
