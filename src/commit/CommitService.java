@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 public class CommitService {
@@ -38,7 +39,7 @@ public class CommitService {
 
 
         // 3. 커밋 객체 생성 및 저장 (현재 존재하는 파일만 포함)
-        Map<String, String> newFileMetadata = getFileMetadataV3(currentFiles); // TODO: 여기야
+        Map<String, String> newFileMetadata = getFileMetadataV4(currentFiles); // TODO: 여기야
 
         Commit commit = new Commit(generateCommitId(message), message, FileUtil.getHEADValue(), newFileMetadata);
         saveCommitToCommitDirectory(commit);
@@ -65,7 +66,7 @@ public class CommitService {
     // V2 : parallelStream
     private static Map<String, String> getFileMetadataV2(Set<Path> currentFiles) throws IOException, NoSuchAlgorithmException {
         Map<String, String> newFileMetadata = new ConcurrentHashMap<>();
-        
+
         currentFiles.parallelStream().forEach(file -> {
             try {
                 String normalizedPath = FileUtil.getRootPath().relativize(file).normalize().toString();
@@ -79,16 +80,16 @@ public class CommitService {
                 throw new RuntimeException(e);
             }
         });
-        
+
         return newFileMetadata;
     }
 
     // V3 : 청크로 나눠서 계산
     private static Map<String, String> getFileMetadataV3(Set<Path> currentFiles) throws IOException {
         Map<String, String> newFileMetadata = new ConcurrentHashMap<>();
-        
+
         // 1. 스레드 풀 설정
-        int threadCount = 7; // 테스트 결과 3개가 최적
+        int threadCount = 32; // TODO
         ExecutorService executor = Executors.newFixedThreadPool(threadCount);
         List<Future<?>> futures = new ArrayList<>();
 
@@ -144,8 +145,124 @@ public class CommitService {
         return newFileMetadata;
     }
 
+    // V4 우선순위 기준 만드는 클래스
+    private static class FileSize implements Comparable<FileSize> {
+        private final Path path;
+        private final long size;
 
+        public FileSize(Path path) throws IOException {
+            this.path = path;
+            this.size = FileUtil.getFileSize(path); // 메타 데이터 사이즈를 가져오게 코드 짬
+        }
 
+        @Override
+        public int compareTo(FileSize other) {
+            // 큰 파일이 높은 우선순위를 가지도록 정렬
+            return Long.compare(other.size, this.size);
+        }
+
+        public Path getPath() {
+            return path;
+        }
+    }
+
+    // V4  메서드 : 큰 파일을 따로 떼서 별도의 스레드로 처리
+    private static Map<String, String> getFileMetadataV4(Set<Path> currentFiles) throws IOException {
+        Map<String, String> newFileMetadata = new ConcurrentHashMap<>();
+        
+        // 1. 먼저 모든 파일의 크기를 한 번에 수집
+        Map<Path, Long> fileSizeCache = currentFiles.parallelStream()
+            .collect(Collectors.toConcurrentMap(
+                file -> file,
+                file -> {
+                    try {
+                        return FileUtil.getFileSize(file);
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                }
+            ));
+
+        // 2. 캐시된 크기를 기준으로 정렬
+        List<Path> sortedFiles = fileSizeCache.entrySet().stream()
+            .sorted((e1, e2) -> Long.compare(e2.getValue(), e1.getValue())) // 내림차순
+            .map(Map.Entry::getKey)
+            .toList();
+
+        int threadCount = 8; // TODO 일반 파일에 할당할 스레드 개수
+        int largeFileThreadCount = 3; //TODO 큰 파일에 할당할 스레드 개수
+        int normalThreadCount = threadCount - largeFileThreadCount;
+        
+        ExecutorService largeFileExecutor = Executors.newFixedThreadPool(largeFileThreadCount);
+        ExecutorService normalFileExecutor = Executors.newFixedThreadPool(normalThreadCount);
+        
+        try {
+            // 3. 큰 파일 처리 (상위 10%)
+            int largeFileCount = Math.max(1, sortedFiles.size() / 10); //TODO
+            List<CompletableFuture<Void>> largeFileFutures = new ArrayList<>();
+            List<CompletableFuture<Void>> normalFileFutures = new ArrayList<>();
+            
+            // 큰 파일 처리
+            for (int i = 0; i < largeFileCount; i++) {
+                Path file = sortedFiles.get(i);
+                largeFileFutures.add(CompletableFuture.runAsync(() -> {
+                    try {
+                        processFile(file, newFileMetadata);
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                }, largeFileExecutor));
+            }
+            
+            // 나머지 파일 처리
+            for (int i = largeFileCount; i < sortedFiles.size(); i++) {
+                Path file = sortedFiles.get(i);
+                normalFileFutures.add(CompletableFuture.runAsync(() -> {
+                    try {
+                        processFile(file, newFileMetadata);
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                }, normalFileExecutor));
+            }
+            
+            // 모든 작업 대기
+            List<CompletableFuture<Void>> allFutures = new ArrayList<>();
+            allFutures.addAll(largeFileFutures);
+            allFutures.addAll(normalFileFutures);
+            CompletableFuture.allOf(allFutures.toArray(new CompletableFuture[0])).join();
+            
+        } finally {
+            largeFileExecutor.shutdown();
+            normalFileExecutor.shutdown();
+            try {
+                if (!largeFileExecutor.awaitTermination(60, TimeUnit.SECONDS)) {
+                    largeFileExecutor.shutdownNow();
+                }
+                if (!normalFileExecutor.awaitTermination(60, TimeUnit.SECONDS)) {
+                    normalFileExecutor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        
+        return newFileMetadata;
+    }
+
+    private static void processFile(Path file, Map<String, String> newFileMetadata) {
+        try {
+            String normalizedPath = FileUtil.getRootPath().relativize(file).normalize().toString();
+            long fileSize = FileUtil.getFileSize(file);
+            long lastModifiedTime = FileUtil.getLastModifiedTime(file);
+            String hash = FileUtil.calculateFileHash(file);
+            FileUtil.saveObject(hash, Files.readAllBytes(file));
+            String fileInfo = fileSize + "," + lastModifiedTime + "," + hash;
+            newFileMetadata.put(normalizedPath, fileInfo);
+        } catch (IOException | NoSuchAlgorithmException e) {
+            System.err.println("Error processing file: " + file);
+        }
+    }
 
 
     public static Commit loadCommitFromCommitDirectory(String commitId) throws IOException {

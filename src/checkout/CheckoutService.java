@@ -45,7 +45,7 @@ public class CheckoutService {
         }
 
         // 4-2. 파일 갱신 (복원, 수정) TODO : 병렬처리 가능 구간
-        restoreFileV3(targetCommitMetadataMap, currentCommitMetadataMap); // TODO : 여기서 알고리즘 갈아끼우셈
+        restoreFileV4(targetCommitMetadataMap, currentCommitMetadataMap); // TODO : 여기서 알고리즘 갈아끼우셈
 
         // 5. 빈 디렉토리 정리
         cleanEmptyDirectories(FileUtil.getRootPath());
@@ -96,9 +96,64 @@ public class CheckoutService {
                 });
     }
 
-    // V3 : 생산자 - 소비자 (청크나눠서)
-    private static void restoreFileV3(Map<String, String> targetCommitMetadataMap, Map<String, String> currentCommitMetadataMap) throws IOException {
-        int threadCount = 2; // 스레드 개수. 일단은 3개가 최적인거같은데 TODO
+
+    // V3 : 고정 개수 청크 분배
+    private static void restoreFileV3(Map<String, String> targetCommitMetadataMap, Map<String, String> currentCommitMetadataMap) throws IOException, InterruptedException {
+        int threadCount = 11; // 스레드 개수
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+
+        List<Map.Entry<String, String>> entries = new ArrayList<>(targetCommitMetadataMap.entrySet());
+        int totalSize = entries.size();
+        int chunkSize = (int) Math.ceil((double) totalSize / threadCount); // 고정된 청크 크기 계산
+
+        List<Future<?>> futures = new ArrayList<>();
+
+        // 각 스레드에 고정된 작업 범위를 할당
+        for (int i = 0; i < threadCount; i++) {
+            int start = i * chunkSize;
+            int end = Math.min(start + chunkSize, totalSize); // 범위 초과 방지
+
+            // 고정된 범위를 처리하는 작업
+            futures.add(executor.submit(() -> {
+                for (int j = start; j < end; j++) {
+                    Map.Entry<String, String> entry = entries.get(j);
+                    String targetFilePath = entry.getKey();
+                    String targetFileHash = entry.getValue().split(",")[2];
+
+                    try {
+                        // 현재 커밋에 파일이 없거나 해시값이 다른 경우 복원
+                        if (!currentCommitMetadataMap.containsKey(targetFilePath) ||
+                                !currentCommitMetadataMap.get(targetFilePath).split(",")[2].equals(targetFileHash)) {
+                            Path filePath = FileUtil.getRootPath().resolve(targetFilePath);
+
+                            Files.createDirectories(filePath.getParent());
+                            System.out.println("\trestoring " + filePath);
+                            Files.copy(FileUtil.getObjectPath(targetFileHash), filePath, StandardCopyOption.REPLACE_EXISTING);
+                        }
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                }
+            }));
+        }
+
+        // 모든 작업 완료 대기
+        for (Future<?> future : futures) {
+            try {
+                future.get();
+            } catch (ExecutionException e) {
+                throw new IOException("Error restoring files", e);
+            }
+        }
+
+        // 스레드 풀 종료
+        executor.shutdown();
+        executor.awaitTermination(1, TimeUnit.HOURS);
+    }
+
+    // V4 : 생산자 - 소비자 (청크나눠서. 가변 개수 청크)
+    private static void restoreFileV4(Map<String, String> targetCommitMetadataMap, Map<String, String> currentCommitMetadataMap) throws IOException {
+        int threadCount = 16; // 스레드 개수.
         BlockingQueue<List<Map.Entry<String, String>>> workQueue = new LinkedBlockingQueue<>();
         ExecutorService executor = Executors.newFixedThreadPool(threadCount);
         List<Future<?>> futures = new ArrayList<>();
@@ -147,7 +202,7 @@ public class CheckoutService {
 
                             // 현재 커밋에 파일이 없거나 해시값이 다른 경우 복원
                             if (!currentCommitMetadataMap.containsKey(targetFilePath) ||
-                                !currentCommitMetadataMap.get(targetFilePath).split(",")[2].equals(targetFileHash)) {
+                                    !currentCommitMetadataMap.get(targetFilePath).split(",")[2].equals(targetFileHash)) {
                                 Path filePath = FileUtil.getRootPath().resolve(targetFilePath);
                                 Files.createDirectories(filePath.getParent());
                                 System.out.println("\trestoring " + filePath);

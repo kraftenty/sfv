@@ -23,7 +23,7 @@ public class CommandParser {
         this.logService = new LogService();
     }
 
-    public void parseCommand(String[] args) {
+    public void parseCommand(String[] args) throws IOException {
         if (args.length == 0) {
             printUsage();
             return;
@@ -49,13 +49,9 @@ public class CommandParser {
         System.out.println("  checkout <commit-id>     Checkout a specific commit");
     }
 
-    public void handleInit() {
-        try {
-            initService.init();
-            System.out.println("[init] repository initialized.");
-        } catch (IOException e) {
-            System.err.println(e.getMessage());
-        }
+    public void handleInit() throws IOException {
+        initService.init();
+        System.out.println("[init] repository initialized.");
     }
 
     public void handleCommit(String[] args) {

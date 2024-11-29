@@ -5,19 +5,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class Main {
-    public static void main(String[] args) {
+    public static void main(String[] args) throws IOException {
         // 명령어 자동화를 위한 리스트
         List<String[]> commands = new ArrayList<>();
         commands.add(new String[]{"init"});
-//        commands.add(new String[]{"status"});
-
         commands.add(new String[]{"commit", "-m", "first commit"});
-//        commands.add(new String[]{"status"});
-//        commands.add(new String[]{"commit", "-m", "second commit"});
-//        commands.add(new String[]{"status"});
-//        commands.add(new String[]{"log"});
 //        commands.add(new String[]{"commit", "-m", "new commit"});
-//        commands.add(new String[] {"checkout", "be75662847013f77ce099c50ad1bb7dbdb515b7e"});
+//        commands.add(new String[] {"checkout", "f894cf1e4c6b1c8146a938f04c3e09544d2cd96f"});
 
         // 각 명령어 실행
         CommandParser commandParser = new CommandParser();
@@ -25,10 +19,11 @@ public class Main {
             commandParser.parseCommand(command);
         }
 
-//        try {
-//            FileUtil.deleteSfvRepository();
-//        } catch (IOException e) {
-//            e.printStackTrace();
-//        }
+        try {
+            FileUtil.deleteSfvRepository();
+            System.out.println(".sfv file deleted");
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 }
