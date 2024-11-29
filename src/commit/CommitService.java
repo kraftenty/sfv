@@ -9,11 +9,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.*;
 import java.util.stream.Collectors;
 
 public class CommitService {
@@ -35,8 +36,9 @@ public class CommitService {
             throw new FileSystemException("Nothing to commit.");
         }
 
+
         // 3. 커밋 객체 생성 및 저장 (현재 존재하는 파일만 포함)
-        Map<String, String> newFileMetadata = getFileMetadataV2(currentFiles);
+        Map<String, String> newFileMetadata = getFileMetadataV3(currentFiles); // TODO: 여기야
 
         Commit commit = new Commit(generateCommitId(message), message, FileUtil.getHEADValue(), newFileMetadata);
         saveCommitToCommitDirectory(commit);
@@ -53,7 +55,7 @@ public class CommitService {
             String normalizedPath = FileUtil.getRootPath().relativize(file).normalize().toString();
             long fileSize = FileUtil.getFileSize(file);
             long lastModifiedTime = FileUtil.getLastModifiedTime(file);
-            String hash = FileUtil.calculateFileHash(file);
+            String hash = FileUtil.calculateFileHash(file); // 좀 오래걸림
             String fileInfo = fileSize + "," + lastModifiedTime + "," + hash;
             newFileMetadata.put(normalizedPath, fileInfo);
         }
@@ -81,10 +83,63 @@ public class CommitService {
         return newFileMetadata;
     }
 
-    // V3
-    private static Map<String, String> getFileMetadataV3(Set<Path> currentFiles) throws IOException, NoSuchAlgorithmException {
+    // V3 : 청크로 나눠서 계산
+    private static Map<String, String> getFileMetadataV3(Set<Path> currentFiles) throws IOException {
         Map<String, String> newFileMetadata = new ConcurrentHashMap<>();
+        
+        // 1. 스레드 풀 설정
+        int threadCount = 7; // 테스트 결과 3개가 최적
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        List<Future<?>> futures = new ArrayList<>();
 
+        // 2. 파일 리스트를 배열로 변환
+        List<Path> fileList = new ArrayList<>(currentFiles);
+        int totalFiles = fileList.size();
+        int filesPerThread = (int) Math.ceil((double) totalFiles / threadCount);
+
+        // 3. 각 스레드에 파일 범위 할당
+        for (int i = 0; i < threadCount; i++) {
+            int startIndex = i * filesPerThread;
+            if (startIndex >= totalFiles) break;
+
+            int endIndex = Math.min(startIndex + filesPerThread, totalFiles);
+            List<Path> chunk = fileList.subList(startIndex, endIndex);
+
+            Future<?> future = executor.submit(() -> {
+                for (Path file : chunk) {
+                    try {
+                        String normalizedPath = FileUtil.getRootPath().relativize(file).normalize().toString();
+                        long fileSize = FileUtil.getFileSize(file);
+                        long lastModifiedTime = FileUtil.getLastModifiedTime(file);
+                        String hash = FileUtil.calculateFileHash(file);
+                        FileUtil.saveObject(hash, Files.readAllBytes(file));
+                        String fileInfo = fileSize + "," + lastModifiedTime + "," + hash;
+                        newFileMetadata.put(normalizedPath, fileInfo);
+                    } catch (IOException | NoSuchAlgorithmException e) {
+                        throw new RuntimeException(e);
+                    }
+                }
+            });
+            futures.add(future);
+        }
+
+        // 4. 모든 작업 완료 대기
+        try {
+            for (Future<?> future : futures) {
+                future.get();
+            }
+        } catch (InterruptedException | ExecutionException e) {
+            throw new IOException("Error processing files", e);
+        } finally {
+            executor.shutdown();
+            try {
+                if (!executor.awaitTermination(60, TimeUnit.SECONDS)) {
+                    executor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                executor.shutdownNow();
+            }
+        }
 
         return newFileMetadata;
     }

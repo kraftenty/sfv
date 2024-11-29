@@ -88,6 +88,8 @@ public class CommandParser {
             System.out.println("checkout time : " + (end - start));
         } catch (IOException e) {
             System.err.println("error occurred while checkout : " + e.getMessage());
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
         }
     }
 

@@ -14,7 +14,7 @@ import java.util.concurrent.*;
 
 public class CheckoutService {
 
-    public void checkout(String partialTargetCommitId) throws IOException {
+    public void checkout(String partialTargetCommitId) throws IOException, InterruptedException {
         FileUtil.validateSfvRepository();
 
         // 1. 완전한 커밋 ID 찾기 (커밋ID 를 다 입력하는건 불편하므로, partialCommitId를 입력받은다음 fullCommitId로 변환)
@@ -73,9 +73,32 @@ public class CheckoutService {
         }
     }
 
-    // V2 :
+    // V2 : parallel stream
     private static void restoreFileV2(Map<String, String> targetCommitMetadataMap, Map<String, String> currentCommitMetadataMap) throws IOException {
-        int threadCount = 2; // 3개가 최적
+        targetCommitMetadataMap.entrySet()
+                .parallelStream()
+                .forEach(entry -> {
+                    try {
+                        String targetFilePath = entry.getKey();
+                        String targetFileHash = entry.getValue().split(",")[2];
+
+                        // 현재 커밋에 파일이 없거나 해시값이 다른 경우 복원
+                        if (!currentCommitMetadataMap.containsKey(targetFilePath) ||
+                                !currentCommitMetadataMap.get(targetFilePath).split(",")[2].equals(targetFileHash)) {
+                            Path filePath = FileUtil.getRootPath().resolve(targetFilePath);
+                            Files.createDirectories(filePath.getParent());
+                            System.out.println("\trestoring " + filePath);
+                            Files.copy(FileUtil.getObjectPath(targetFileHash), filePath, StandardCopyOption.REPLACE_EXISTING);
+                        }
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                });
+    }
+
+    // V3 : 생산자 - 소비자 (청크나눠서)
+    private static void restoreFileV3(Map<String, String> targetCommitMetadataMap, Map<String, String> currentCommitMetadataMap) throws IOException {
+        int threadCount = 2; // 스레드 개수. 일단은 3개가 최적인거같은데 TODO
         BlockingQueue<List<Map.Entry<String, String>>> workQueue = new LinkedBlockingQueue<>();
         ExecutorService executor = Executors.newFixedThreadPool(threadCount);
         List<Future<?>> futures = new ArrayList<>();
@@ -83,9 +106,9 @@ public class CheckoutService {
         // 1. 생산자: 작업을 청크 단위로 분할하여 큐에 추가
         Future<?> producerFuture = executor.submit(() -> {
             try {
-                int chunkSize = 100;
+                int chunkSize = 100; // 청크사이즈도 조절해야함. TODO
                 List<Map.Entry<String, String>> currentChunk = new ArrayList<>(chunkSize);
-                
+
                 for (Map.Entry<String, String> entry : targetCommitMetadataMap.entrySet()) {
                     currentChunk.add(entry);
                     if (currentChunk.size() >= chunkSize) {
@@ -93,12 +116,12 @@ public class CheckoutService {
                         currentChunk.clear();
                     }
                 }
-                
+
                 // 마지막 청크 처리
                 if (!currentChunk.isEmpty()) {
                     workQueue.add(new ArrayList<>(currentChunk));
                 }
-                
+
                 // 작업 완료 표시
                 for (int i = 0; i < threadCount; i++) {
                     workQueue.add(Collections.emptyList());
@@ -117,13 +140,13 @@ public class CheckoutService {
                         if (chunk.isEmpty()) {
                             break;
                         }
-                        
+
                         for (Map.Entry<String, String> entry : chunk) {
                             String targetFilePath = entry.getKey();
                             String targetFileHash = entry.getValue().split(",")[2];
-                            
+
                             // 현재 커밋에 파일이 없거나 해시값이 다른 경우 복원
-                            if (!currentCommitMetadataMap.containsKey(targetFilePath) || 
+                            if (!currentCommitMetadataMap.containsKey(targetFilePath) ||
                                 !currentCommitMetadataMap.get(targetFilePath).split(",")[2].equals(targetFileHash)) {
                                 Path filePath = FileUtil.getRootPath().resolve(targetFilePath);
                                 Files.createDirectories(filePath.getParent());
@@ -159,29 +182,6 @@ public class CheckoutService {
                 executor.shutdownNow();
             }
         }
-    }
-
-    // V3 :
-    private static void restoreFileV3(Map<String, String> targetCommitMetadataMap, Map<String, String> currentCommitMetadataMap) throws IOException {
-        targetCommitMetadataMap.entrySet()
-            .parallelStream()
-            .forEach(entry -> {
-                try {
-                    String targetFilePath = entry.getKey();
-                    String targetFileHash = entry.getValue().split(",")[2];
-                    
-                    // 현재 커밋에 파일이 없거나 해시값이 다른 경우 복원
-                    if (!currentCommitMetadataMap.containsKey(targetFilePath) || 
-                        !currentCommitMetadataMap.get(targetFilePath).split(",")[2].equals(targetFileHash)) {
-                        Path filePath = FileUtil.getRootPath().resolve(targetFilePath);
-                        Files.createDirectories(filePath.getParent());
-                        System.out.println("\trestoring " + filePath);
-                        Files.copy(FileUtil.getObjectPath(targetFileHash), filePath, StandardCopyOption.REPLACE_EXISTING);
-                    }
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
-            });
     }
 
     // 빈 디렉토리를 정리하는 헬퍼 메서드

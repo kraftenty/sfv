@@ -9,7 +9,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.*;
-import java.util.stream.Collectors;
 
 public class ModifyDetector {
 
@@ -21,7 +20,7 @@ public class ModifyDetector {
      */
 
     public static List<Path> findModifiedFiles() throws IOException {
-        return doStrategyV5(); // TODO : 여기서 알고리즘 갈아끼우기
+        return doStrategyV3(); // TODO : 여기서 알고리즘 갈아끼우기
     }
 
     // V1 전략 : 싱글스레드
@@ -111,8 +110,9 @@ public class ModifyDetector {
 
         return modifiedFiles;
     }
-    
-    private static List<Path> doStrategyV5() throws IOException {
+
+    // V3 : 청크로 분할
+    private static List<Path> doStrategyV3() throws IOException {
         List<Path> modifiedFiles = Collections.synchronizedList(new ArrayList<>());
         String head = FileUtil.getHEADValue();
         Commit lastCommit = head.isEmpty() ? null : CommitService.loadCommitFromCommitDirectory(head);
