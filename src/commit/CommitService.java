@@ -9,13 +9,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 public class CommitService {
@@ -39,7 +34,7 @@ public class CommitService {
 
 
         // 3. 커밋 객체 생성 및 저장 (현재 존재하는 파일만 포함)
-        Map<String, String> newFileMetadata = getFileMetadataV4(currentFiles); // TODO: 여기야
+        Map<String, String> newFileMetadata = getFileMetadataV4(currentFiles); // TODO
 
         Commit commit = new Commit(generateCommitId(message), message, FileUtil.getHEADValue(), newFileMetadata);
         saveCommitToCommitDirectory(commit);
@@ -66,7 +61,6 @@ public class CommitService {
     // V2 : parallelStream
     private static Map<String, String> getFileMetadataV2(Set<Path> currentFiles) throws IOException, NoSuchAlgorithmException {
         Map<String, String> newFileMetadata = new ConcurrentHashMap<>();
-
         currentFiles.parallelStream().forEach(file -> {
             try {
                 String normalizedPath = FileUtil.getRootPath().relativize(file).normalize().toString();
@@ -81,8 +75,11 @@ public class CommitService {
             }
         });
 
+
         return newFileMetadata;
     }
+
+
 
     // V3 : 청크로 나눠서 계산
     private static Map<String, String> getFileMetadataV3(Set<Path> currentFiles) throws IOException {
@@ -145,26 +142,6 @@ public class CommitService {
         return newFileMetadata;
     }
 
-    // V4 우선순위 기준 만드는 클래스
-    private static class FileSize implements Comparable<FileSize> {
-        private final Path path;
-        private final long size;
-
-        public FileSize(Path path) throws IOException {
-            this.path = path;
-            this.size = FileUtil.getFileSize(path); // 메타 데이터 사이즈를 가져오게 코드 짬
-        }
-
-        @Override
-        public int compareTo(FileSize other) {
-            // 큰 파일이 높은 우선순위를 가지도록 정렬
-            return Long.compare(other.size, this.size);
-        }
-
-        public Path getPath() {
-            return path;
-        }
-    }
 
     // V4  메서드 : 큰 파일을 따로 떼서 별도의 스레드로 처리
     private static Map<String, String> getFileMetadataV4(Set<Path> currentFiles) throws IOException {
@@ -198,7 +175,7 @@ public class CommitService {
         
         try {
             // 3. 큰 파일 처리 (상위 10%)
-            int largeFileCount = Math.max(1, sortedFiles.size() / 10); //TODO
+            int largeFileCount = Math.max(1, sortedFiles.size() / 20); //TODO
             List<CompletableFuture<Void>> largeFileFutures = new ArrayList<>();
             List<CompletableFuture<Void>> normalFileFutures = new ArrayList<>();
             

@@ -117,7 +117,7 @@ public class ModifyDetector {
         String head = FileUtil.getHEADValue();
         Commit lastCommit = head.isEmpty() ? null : CommitService.loadCommitFromCommitDirectory(head);
 
-        int threadCount = 32; // 스레드 개수
+        int threadCount = 11; // 스레드 개수
         ExecutorService executor = Executors.newFixedThreadPool(threadCount);
         List<Future<?>> futures = new ArrayList<>();
 

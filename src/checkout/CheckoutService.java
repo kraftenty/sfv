@@ -45,7 +45,7 @@ public class CheckoutService {
         }
 
         // 4-2. 파일 갱신 (복원, 수정) TODO : 병렬처리 가능 구간
-        restoreFileV4(targetCommitMetadataMap, currentCommitMetadataMap); // TODO : 여기서 알고리즘 갈아끼우셈
+        restoreFileV4(targetCommitMetadataMap, currentCommitMetadataMap); // TODO
 
         // 5. 빈 디렉토리 정리
         cleanEmptyDirectories(FileUtil.getRootPath());

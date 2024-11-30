@@ -1,0 +1,8 @@
+<component name="ArtifactManager">
+  <artifact type="jar" name="sfv:jar">
+    <output-path>$PROJECT_DIR$/out/artifacts/sfv_jar</output-path>
+    <root id="archive" name="sfv.jar">
+      <element id="module-output" name="sfv" />
+    </root>
+  </artifact>
+</component>
