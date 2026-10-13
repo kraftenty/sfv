@@ -8,7 +8,7 @@
 $ sfv init
 $ sfv commit -m "commit message"
 $ sfv status
-$ stv log
+$ sfv log
 $ sfv checkout [target commit ID]
 ```
 
